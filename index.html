@@ -206,10 +206,12 @@ textarea.form-input { resize: vertical; min-height: 70px; }
         </div>
       </div>
       <div id="sessionBlocks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
         <button onclick="addBlock()" style="flex:1;padding:10px;border-radius:10px;border:1px dashed #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">+ Aggiungi blocco</button>
-        <button onclick="autoDistribute()" style="padding:10px 14px;border-radius:10px;border:1px solid #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" title="Distribuisci minuti automaticamente" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">⟳ Auto</button>
+        <button onclick="autoDistribute()" style="padding:10px 14px;border-radius:10px;border:1px solid #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">⟳ Auto</button>
+        <button onclick="saveTemplate()" style="padding:10px 14px;border-radius:10px;border:1px solid #1a4a30;background:#0d2b1e;color:#4ade80;font-size:13px;cursor:pointer;" onmouseover="this.style.background='#1a4a30'" onmouseout="this.style.background='#0d2b1e'">💾 Salva</button>
       </div>
+      <div id="templatesBar" style="margin-bottom:4px;"></div>
     </div>
     <input class="name-input" id="playlistName" value="Spinning Session 🔥" placeholder="Nome playlist" />
     <button class="btn btn-primary btn-full" id="generateBtn" onclick="generate()">✨ Genera playlist con AI</button>
@@ -438,6 +440,8 @@ function showApp() {
   makeChips('genreGroup', GENRES);
   autoDistribute();
   updateLibraryCount();
+  sessionTemplates = JSON.parse(localStorage.getItem('spinflow_templates')||'[]');
+  renderTemplatesBar();
   if (window.Spotify) initPlayer();
 }
 
@@ -577,18 +581,18 @@ function updateLibraryCount(){
 }
 
 // ---- SESSION BUILDER ----
-const EXERCISE_TYPES=['Warm-up','Side to side','Hill','Climb','Jog','Jump','Weight track','Soul song','Sprint','Stretching'];
-const EX_COLORS={'Warm-up':'#4ade80','Side to side':'#60a5fa','Hill':'#fbbf24','Climb':'#f97316','Jog':'#a78bfa','Jump':'#f87171','Weight track':'#34d399','Soul song':'#f472b6','Sprint':'#ef4444','Stretching':'#94a3b8'};
+const EXERCISE_TYPES=['Warm-up','Jog','Fast jog','Jump','Climb','Hill','Sprint','Final sprint','Weight track','Soul song','Stretching'];
+const EX_COLORS={'Warm-up':'#4ade80','Jog':'#a78bfa','Fast jog':'#818cf8','Jump':'#f87171','Climb':'#f97316','Hill':'#fbbf24','Sprint':'#ef4444','Final sprint':'#dc2626','Weight track':'#34d399','Soul song':'#f472b6','Stretching':'#94a3b8'};
 
 let sessionBlocks=[
-  {type:'Warm-up',bpm:120,duration:5,energy:'low'},
-  {type:'Jog',bpm:140,duration:5,energy:'medium'},
-  {type:'Hill',bpm:150,duration:8,energy:'high'},
-  {type:'Sprint',bpm:165,duration:3,energy:'high'},
-  {type:'Stretching',bpm:100,duration:4,energy:'low'}
+  {type:'Warm-up',bpm:128,duration:5,energy:'low'},
+  {type:'Jog',bpm:90,duration:5,energy:'medium'},
+  {type:'Hill',bpm:75,duration:8,energy:'high'},
+  {type:'Sprint',bpm:130,duration:3,energy:'high'},
+  {type:'Stretching',bpm:80,duration:4,energy:'low'}
 ];
 
-const DEFAULT_ENERGY={'Warm-up':'low','Side to side':'medium','Hill':'high','Climb':'high','Jog':'medium','Jump':'high','Weight track':'medium','Soul song':'low','Sprint':'high','Stretching':'low'};
+const DEFAULT_ENERGY={'Warm-up':'low','Jog':'medium','Fast jog':'medium','Jump':'high','Climb':'medium','Hill':'high','Sprint':'high','Final sprint':'high','Weight track':'medium','Soul song':'low','Stretching':'low'};
 
 function addBlock(){
   sessionBlocks.push({type:'Jog',bpm:140,duration:5,energy:'medium'});
@@ -603,11 +607,61 @@ function removeBlock(i){
 function updateBlock(i,field,val){
   sessionBlocks[i][field]=(field==='bpm'||field==='duration')?+val:val;
   if(field==='type'){
-    const defaults={'Warm-up':120,'Side to side':135,'Hill':145,'Climb':155,'Jog':140,'Jump':160,'Weight track':130,'Soul song':125,'Sprint':170,'Stretching':100};
+    const defaults={'Warm-up':128,'Jog':90,'Fast jog':105,'Jump':128,'Climb':60,'Hill':75,'Sprint':130,'Final sprint':130,'Weight track':130,'Soul song':90,'Stretching':80};
     sessionBlocks[i].bpm=defaults[val]||140;
     sessionBlocks[i].energy=DEFAULT_ENERGY[val]||'medium';
   }
   renderSessionBlocks();
+}
+
+let sessionTemplates = JSON.parse(localStorage.getItem('spinflow_templates')||'[]');
+
+function saveTemplate(){
+  const name = prompt('Nome del template (es. "Lunedì Sprint", "Classe Resistenza"):');
+  if(!name || !name.trim()) return;
+  const template = {
+    id: Date.now(),
+    name: name.trim(),
+    totalDuration: +document.getElementById('totalDuration').value||45,
+    blocks: JSON.parse(JSON.stringify(sessionBlocks))
+  };
+  sessionTemplates = sessionTemplates.filter(t=>t.name!==template.name);
+  sessionTemplates.unshift(template);
+  localStorage.setItem('spinflow_templates', JSON.stringify(sessionTemplates));
+  renderTemplatesBar();
+}
+
+function loadTemplate(id){
+  const t = sessionTemplates.find(t=>t.id===id);
+  if(!t) return;
+  sessionBlocks = JSON.parse(JSON.stringify(t.blocks));
+  document.getElementById('totalDuration').value = t.totalDuration;
+  renderSessionBlocks();
+}
+
+function deleteTemplate(id){
+  sessionTemplates = sessionTemplates.filter(t=>t.id!==id);
+  localStorage.setItem('spinflow_templates', JSON.stringify(sessionTemplates));
+  renderTemplatesBar();
+}
+
+function renderTemplatesBar(){
+  const bar = document.getElementById('templatesBar');
+  if(!bar) return;
+  if(!sessionTemplates.length){
+    bar.innerHTML='';
+    return;
+  }
+  bar.innerHTML = `<div style="margin-bottom:10px;">
+    <div style="font-size:11px;color:#555;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;">I tuoi template</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${sessionTemplates.map(t=>`
+        <div style="display:flex;align-items:center;gap:0;border-radius:20px;border:1px solid #2a2a2a;overflow:hidden;">
+          <button onclick="loadTemplate(${t.id})" style="padding:5px 12px;border:none;background:#141414;color:#a89bff;font-size:12px;cursor:pointer;" onmouseover="this.style.background='#1e1a3a'" onmouseout="this.style.background='#141414'">${t.name} <span style="color:#555;font-size:11px;">${t.blocks.length} blocchi · ${t.totalDuration}min</span></button>
+          <button onclick="deleteTemplate(${t.id})" style="padding:5px 8px;border:none;border-left:1px solid #2a2a2a;background:#141414;color:#555;font-size:12px;cursor:pointer;" onmouseover="this.style.color='#f87171';this.style.background='#2a2a2a'" onmouseout="this.style.color='#555';this.style.background='#141414'">×</button>
+        </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 function autoDistribute(){
@@ -845,9 +899,12 @@ function renderGeneratedTracks(){
         <div class="track-artist">${t.artist}</div>
       </div>
       <span class="phase-badge" style="background:#1a1a1a;color:${color};border:1px solid #2a2a2a;">${t.type||''}</span>
-      <div class="track-bpm-mini">
-        <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:60px;">
-        <span class="bpm-label" id="bpm-${i}">${t.bpm}</span>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:55px;">
+          <span class="bpm-label" id="bpm-${i}">${t.bpm}</span>
+        </div>
+        ${t.actualBpm?`<span style="font-size:10px;color:#4ade80;">reale: ${t.actualBpm} bpm</span>`:''}
       </div>
     </div>`;
   }).join('');
@@ -865,6 +922,31 @@ async function playGeneratedTrack(i){
 
 function updateBpm(i,val){generatedTracks[i].bpm=+val;document.getElementById('bpm-'+i).textContent=val;}
 
+async function searchTrackWithBpm(query, targetBpm, token) {
+  const range = 10;
+  const halfBpm = Math.round(targetBpm / 2);
+  const doubleBpm = targetBpm * 2;
+  try {
+    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`, {headers:{Authorization:'Bearer '+token}});
+    const data = await res.json();
+    const tracks = data.tracks?.items || [];
+    if (!tracks.length) return null;
+    const ids = tracks.map(t=>t.id).join(',');
+    const featRes = await fetch(`https://api.spotify.com/v1/audio-features?ids=${ids}`, {headers:{Authorization:'Bearer '+token}});
+    const featData = await featRes.json();
+    const features = featData.audio_features || [];
+    let best = null, bestDiff = 999;
+    tracks.forEach((track, i) => {
+      const feat = features[i];
+      if (!feat) return;
+      const bpm = feat.tempo;
+      const diff = Math.min(Math.abs(bpm-targetBpm), Math.abs(bpm-halfBpm), Math.abs(bpm-doubleBpm));
+      if (diff < bestDiff) { bestDiff = diff; best = {track, bpm: Math.round(bpm), diff}; }
+    });
+    return best;
+  } catch(e) { return null; }
+}
+
 async function savePlaylist(){
   const btn=document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvataggio...';
   const token=await getValidToken();
@@ -875,8 +957,12 @@ async function savePlaylist(){
     const pl=await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:plName,description:'Creata con SpinFlow',public:false})})).json();
     const uris=[];
     for(const t of generatedTracks){
-      const s=await (await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(t.title+' '+t.artist)}&type=track&limit=1`,{headers:{Authorization:'Bearer '+token}})).json();
-      if(s.tracks?.items?.[0]) uris.push(s.tracks.items[0].uri);
+      const result = await searchTrackWithBpm(`${t.title} ${t.artist}`, t.bpm, token);
+      if(result) { uris.push(result.track.uri); t.actualBpm=result.bpm; }
+      else {
+        const s=await (await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(t.title+' '+t.artist)}&type=track&limit=1`,{headers:{Authorization:'Bearer '+token}})).json();
+        if(s.tracks?.items?.[0]) uris.push(s.tracks.items[0].uri);
+      }
     }
     if(uris.length) await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({uris})});
     sessionHistory.unshift({id:Date.now(),name:plName,date:new Date().toISOString(),tracks:generatedTracks,trackCount:uris.length});
