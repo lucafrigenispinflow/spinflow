@@ -193,15 +193,23 @@ textarea.form-input { resize: vertical; min-height: 70px; }
     <div class="card"><div class="card-label">Vibe / Mood</div><div class="chip-group" id="vibeGroup"></div></div>
     <div class="card"><div class="card-label">Genere Musicale</div><div class="chip-group" id="genreGroup"></div></div>
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div class="card-label" style="margin-bottom:0;">Costruisci la tua sessione</div>
-        <div style="display:flex;gap:12px;align-items:center;">
-          <span style="font-size:12px;color:#555;" id="sessionDuration">0 min totali</span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <div style="display:flex;align-items:center;gap:6px;background:#0f0f0f;border-radius:8px;border:1px solid #2a2a2a;padding:4px 10px;">
+            <span style="font-size:11px;color:#555;">Durata totale</span>
+            <input type="number" id="totalDuration" value="45" min="10" max="120" onchange="autoDistribute()" style="width:44px;padding:3px 4px;border-radius:6px;border:1px solid #2a2a2a;background:#141414;color:#6C63FF;font-size:13px;font-weight:600;outline:none;text-align:center;">
+            <span style="font-size:11px;color:#555;">min</span>
+          </div>
+          <span style="font-size:12px;color:#555;" id="sessionDuration">0 min usati</span>
           <span style="font-size:12px;color:#6C63FF;" id="libraryCount">0 in libreria</span>
         </div>
       </div>
       <div id="sessionBlocks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
-      <button onclick="addBlock()" style="width:100%;padding:10px;border-radius:10px;border:1px dashed #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">+ Aggiungi blocco</button>
+      <div style="display:flex;gap:8px;">
+        <button onclick="addBlock()" style="flex:1;padding:10px;border-radius:10px;border:1px dashed #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">+ Aggiungi blocco</button>
+        <button onclick="autoDistribute()" style="padding:10px 14px;border-radius:10px;border:1px solid #2a2a2a;background:transparent;color:#555;font-size:13px;cursor:pointer;" title="Distribuisci minuti automaticamente" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#555'">⟳ Auto</button>
+      </div>
     </div>
     <input class="name-input" id="playlistName" value="Spinning Session 🔥" placeholder="Nome playlist" />
     <button class="btn btn-primary btn-full" id="generateBtn" onclick="generate()">✨ Genera playlist con AI</button>
@@ -428,7 +436,7 @@ function showApp() {
   document.getElementById('appShell').style.display = 'flex';
   makeChips('vibeGroup', VIBES);
   makeChips('genreGroup', GENRES);
-  renderSessionBlocks();
+  autoDistribute();
   updateLibraryCount();
   if (window.Spotify) initPlayer();
 }
@@ -573,15 +581,17 @@ const EXERCISE_TYPES=['Warm-up','Side to side','Hill','Climb','Jog','Jump','Weig
 const EX_COLORS={'Warm-up':'#4ade80','Side to side':'#60a5fa','Hill':'#fbbf24','Climb':'#f97316','Jog':'#a78bfa','Jump':'#f87171','Weight track':'#34d399','Soul song':'#f472b6','Sprint':'#ef4444','Stretching':'#94a3b8'};
 
 let sessionBlocks=[
-  {type:'Warm-up',bpm:120,duration:5},
-  {type:'Jog',bpm:140,duration:5},
-  {type:'Hill',bpm:150,duration:8},
-  {type:'Sprint',bpm:165,duration:3},
-  {type:'Stretching',bpm:100,duration:4}
+  {type:'Warm-up',bpm:120,duration:5,energy:'low'},
+  {type:'Jog',bpm:140,duration:5,energy:'medium'},
+  {type:'Hill',bpm:150,duration:8,energy:'high'},
+  {type:'Sprint',bpm:165,duration:3,energy:'high'},
+  {type:'Stretching',bpm:100,duration:4,energy:'low'}
 ];
 
+const DEFAULT_ENERGY={'Warm-up':'low','Side to side':'medium','Hill':'high','Climb':'high','Jog':'medium','Jump':'high','Weight track':'medium','Soul song':'low','Sprint':'high','Stretching':'low'};
+
 function addBlock(){
-  sessionBlocks.push({type:'Jog',bpm:140,duration:5});
+  sessionBlocks.push({type:'Jog',bpm:140,duration:5,energy:'medium'});
   renderSessionBlocks();
 }
 
@@ -595,33 +605,57 @@ function updateBlock(i,field,val){
   if(field==='type'){
     const defaults={'Warm-up':120,'Side to side':135,'Hill':145,'Climb':155,'Jog':140,'Jump':160,'Weight track':130,'Soul song':125,'Sprint':170,'Stretching':100};
     sessionBlocks[i].bpm=defaults[val]||140;
+    sessionBlocks[i].energy=DEFAULT_ENERGY[val]||'medium';
   }
+  renderSessionBlocks();
+}
+
+function autoDistribute(){
+  const total=+document.getElementById('totalDuration').value||45;
+  if(!sessionBlocks.length) return;
+  const weights={'Warm-up':1,'Side to side':1.2,'Hill':1.8,'Climb':2,'Jog':1.3,'Jump':1,'Weight track':1.5,'Soul song':1.2,'Sprint':0.8,'Stretching':0.8};
+  const totalWeight=sessionBlocks.reduce((s,b)=>s+(weights[b.type]||1),0);
+  let remaining=total;
+  sessionBlocks.forEach((b,i)=>{
+    if(i===sessionBlocks.length-1){ b.duration=Math.max(1,remaining); }
+    else{ b.duration=Math.max(1,Math.round((weights[b.type]||1)/totalWeight*total)); remaining-=b.duration; }
+  });
   renderSessionBlocks();
 }
 
 function renderSessionBlocks(){
   const total=sessionBlocks.reduce((s,b)=>s+b.duration,0);
+  const target=+document.getElementById('totalDuration')?.value||45;
   const durEl=document.getElementById('sessionDuration');
-  if(durEl) durEl.textContent=total+' min totali';
+  const diff=total-target;
+  const diffStr=diff===0?'':'  '+(diff>0?`+${diff}`:`${diff}`)+' min';
+  if(durEl) durEl.innerHTML=`<span style="color:${diff===0?'#555':diff>0?'#f87171':'#fbbf24'}">${total} / ${target} min${diffStr}</span>`;
   const container=document.getElementById('sessionBlocks');
   if(!container) return;
+  const energyColors={high:'#ef4444',medium:'#fbbf24',low:'#4ade80'};
+  const energyLabels={high:'🔴 High',medium:'🟡 Medium',low:'🟢 Low'};
   container.innerHTML=sessionBlocks.map((b,i)=>{
     const color=EX_COLORS[b.type]||'#888';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#0f0f0f;border-radius:10px;border:1px solid #1e1e1e;">
-      <div style="width:4px;height:40px;border-radius:2px;background:${color};flex-shrink:0;"></div>
-      <div style="font-size:18px;flex-shrink:0;">${{'Warm-up':'🟢','Side to side':'🔵','Hill':'🟡','Climb':'🟠','Jog':'🟣','Jump':'🔴','Weight track':'🟩','Soul song':'🩷','Sprint':'❤️','Stretching':'⚪'}[b.type]||'⚪'}</div>
-      <select onchange="updateBlock(${i},'type',this.value)" style="padding:6px 8px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#f0f0f0;font-size:13px;flex:1;outline:none;cursor:pointer;">
+    const eColor=energyColors[b.energy||'medium'];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:#0f0f0f;border-radius:10px;border:1px solid #1e1e1e;">
+      <div style="width:4px;height:38px;border-radius:0;background:${color};flex-shrink:0;"></div>
+      <select onchange="updateBlock(${i},'type',this.value)" style="padding:5px 7px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#f0f0f0;font-size:12px;flex:1;outline:none;cursor:pointer;min-width:0;">
         ${EXERCISE_TYPES.map(t=>`<option value="${t}"${b.type===t?' selected':''} >${t}</option>`).join('')}
       </select>
-      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-        <span style="font-size:10px;color:#555;text-transform:uppercase;">bpm</span>
-        <input type="number" value="${b.bpm}" min="60" max="200" onchange="updateBlock(${i},'bpm',this.value)" style="width:54px;padding:6px 6px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#6C63FF;font-size:13px;font-weight:600;outline:none;text-align:center;">
+      <select onchange="updateBlock(${i},'energy',this.value)" style="padding:5px 7px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:${eColor};font-size:12px;flex-shrink:0;outline:none;cursor:pointer;width:100px;">
+        <option value="high" ${b.energy==='high'?'selected':''}>🔴 High</option>
+        <option value="medium" ${b.energy==='medium'?'selected':''}>🟡 Medium</option>
+        <option value="low" ${b.energy==='low'?'selected':''}>🟢 Low</option>
+      </select>
+      <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;">
+        <span style="font-size:10px;color:#555;">BPM</span>
+        <input type="number" value="${b.bpm}" min="60" max="200" onchange="updateBlock(${i},'bpm',this.value)" style="width:52px;padding:5px 5px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#6C63FF;font-size:12px;font-weight:600;outline:none;text-align:center;">
       </div>
-      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-        <span style="font-size:10px;color:#555;text-transform:uppercase;">min</span>
-        <input type="number" value="${b.duration}" min="1" max="30" onchange="updateBlock(${i},'duration',this.value)" style="width:44px;padding:6px 6px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#f0f0f0;font-size:13px;outline:none;text-align:center;">
+      <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;">
+        <span style="font-size:10px;color:#555;">min</span>
+        <input type="number" value="${b.duration}" min="1" max="30" onchange="updateBlock(${i},'duration',this.value)" style="width:40px;padding:5px 5px;border-radius:8px;border:1px solid #2a2a2a;background:#141414;color:#f0f0f0;font-size:12px;outline:none;text-align:center;">
       </div>
-      <button onclick="removeBlock(${i})" style="width:26px;height:26px;border-radius:50%;border:none;background:#2a2a2a;color:#666;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0;" onmouseover="this.style.background='#4a1010';this.style.color='#f87171'" onmouseout="this.style.background='#2a2a2a';this.style.color='#666'">×</button>
+      <button onclick="removeBlock(${i})" style="width:24px;height:24px;border-radius:50%;border:none;background:#1e1e1e;color:#555;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" onmouseover="this.style.background='#4a1010';this.style.color='#f87171'" onmouseout="this.style.background='#1e1e1e';this.style.color='#555'">×</button>
     </div>`;
   }).join('');
 }
@@ -758,7 +792,8 @@ async function generate(){
   const totalDur=sessionBlocks.reduce((s,b)=>s+b.duration,0);
   const libCtx=library.length>0?`\nHo in libreria questi brani, usali dove BPM e tipo si adattano:\n${library.map(t=>`- "${t.title}" di ${t.artist} (${t.bpm}BPM, ${t.exercises.join('/')})`).join('\n')}`:'';
 
-  const blocksDesc=sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type}, BPM target ${b.bpm} (range accettabile ${b.bpm-5}-${b.bpm+5}), durata ${b.duration} min`).join('\n');
+  const energyDesc={high:'alta energia (esplosiva, adrenalinica, rock/EDM duro)',medium:'energia media (ritmo costante, motivante, pop/hip-hop)',low:'bassa energia (emotiva, soft, soul/ambient/acustica)'};
+  const blocksDesc=sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type}, BPM target ${b.bpm} (range ±5 o doppio/metà), durata ${b.duration} min, energia: ${energyDesc[b.energy||'medium']}`).join('\n');
 
   document.getElementById('resultArea').innerHTML='<div class="loading-text">Generando playlist... ✨</div>';
   document.getElementById('generateBtn').disabled=true;
