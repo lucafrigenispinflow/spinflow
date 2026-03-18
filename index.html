@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpinFlow</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #f0f0f0; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; flex-direction: column; }
+.top-layout { display: flex; flex: 1; padding-bottom: 90px; }
+.sidebar { width: 220px; background: #111; border-right: 1px solid #1e1e1e; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; position: fixed; top: 0; height: calc(100vh - 90px); overflow-y: auto; }
+.main { margin-left: 220px; flex: 1; padding: 2rem; max-width: 900px; }
+.logo { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 1.5rem; padding: 0 8px; }
+.logo span { color: #6C63FF; }
+.nav-item { padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 14px; color: #888; display: flex; align-items: center; gap: 10px; transition: all 0.15s; }
+.nav-item:hover { background: #1a1a1a; color: #ccc; }
+.nav-item.active { background: #1e1a3a; color: #a89bff; font-weight: 500; }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid #1e1e1e; }
+.spotify-status { font-size: 12px; color: #888; padding: 8px 12px; }
+.spotify-status.ok { color: #4ade80; }
+.page { display: none; }
+.page.active { display: block; }
+.page-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.page-sub { font-size: 14px; color: #666; margin-bottom: 2rem; }
+.card { background: #141414; border-radius: 14px; border: 1px solid #1e1e1e; padding: 1.25rem; margin-bottom: 1.25rem; }
+.card-label { font-size: 11px; font-weight: 600; color: #555; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+.chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 6px 14px; border-radius: 20px; border: 1px solid #2a2a2a; font-size: 13px; cursor: pointer; background: #0f0f0f; color: #777; transition: all 0.15s; user-select: none; }
+.chip.active { background: #6C63FF; border-color: #6C63FF; color: #fff; }
+.chip:hover { border-color: #444; color: #bbb; }
+.slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.slider-label { font-size: 13px; color: #777; width: 90px; flex-shrink: 0; }
+input[type=range] { flex: 1; -webkit-appearance: none; height: 4px; background: #2a2a2a; border-radius: 2px; outline: none; cursor: pointer; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #6C63FF; cursor: pointer; }
+.slider-val { font-size: 13px; font-weight: 600; color: #f0f0f0; min-width: 60px; text-align: right; }
+.phases { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.phase { border-radius: 10px; padding: 10px 6px; text-align: center; }
+.phase-name { font-size: 10px; margin-bottom: 4px; font-weight: 500; }
+.phase-bpm { font-size: 15px; font-weight: 700; }
+.phase-min { font-size: 10px; margin-top: 2px; opacity: 0.7; }
+.btn { padding: 10px 20px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.btn-primary { background: #6C63FF; color: #fff; }
+.btn-primary:hover { background: #5a52e0; }
+.btn-primary:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
+.btn-green { background: #1DB954; color: #fff; }
+.btn-green:hover { background: #17a347; }
+.btn-green:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline { background: transparent; color: #888; border: 1px solid #2a2a2a; }
+.btn-outline:hover { border-color: #444; color: #ccc; }
+.btn-full { width: 100%; padding: 14px; font-size: 15px; border-radius: 12px; }
+.search-box { display: flex; gap: 8px; margin-bottom: 1rem; }
+.search-input { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid #2a2a2a; background: #0f0f0f; color: #f0f0f0; font-size: 14px; outline: none; }
+.search-input:focus { border-color: #6C63FF; }
+.search-results { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+.search-result-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 10px; background: #0f0f0f; border: 1px solid #1e1e1e; transition: all 0.15s; }
+.search-result-item:hover { border-color: #6C63FF; background: #1a1a2a; }
+.search-cover { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: #2a2a2a; flex-shrink: 0; }
+.search-info { flex: 1; min-width: 0; cursor: pointer; }
+.search-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-artist { font-size: 12px; color: #888; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 200; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: #141414; border-radius: 16px; border: 1px solid #2a2a2a; padding: 1.5rem; width: 90%; max-width: 500px; max-height: 85vh; overflow-y: auto; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 1.5rem; }
+.form-row { margin-bottom: 1rem; }
+.form-label { font-size: 12px; color: #777; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; display: block; }
+.form-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2a2a; background: #0f0f0f; color: #f0f0f0; font-size: 14px; outline: none; }
+.form-input:focus { border-color: #6C63FF; }
+textarea.form-input { resize: vertical; min-height: 70px; }
+.form-row-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+.modal-actions { display: flex; gap: 8px; margin-top: 1.5rem; }
+.exercise-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ex-chip { padding: 5px 12px; border-radius: 16px; border: 1px solid #2a2a2a; font-size: 12px; cursor: pointer; background: #0f0f0f; color: #777; transition: all 0.15s; }
+.ex-chip.active { background: #1e2a1a; border-color: #4ade80; color: #4ade80; }
+.library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.lib-card { background: #141414; border-radius: 12px; border: 1px solid #1e1e1e; overflow: hidden; transition: border-color 0.15s; }
+.lib-card:hover { border-color: #333; }
+.lib-cover { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.lib-cover-placeholder { width: 100%; aspect-ratio: 1; background: linear-gradient(135deg, #1e1a3a, #0d2b1e); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.lib-info { padding: 10px 12px; }
+.lib-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.lib-artist { font-size: 11px; color: #777; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.lib-tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; }
+.lib-bpm { font-size: 11px; color: #6C63FF; font-weight: 600; }
+.lib-actions { display: flex; gap: 6px; margin-top: 8px; }
+.lib-btn { flex: 1; padding: 5px; border-radius: 6px; border: 1px solid #2a2a2a; background: transparent; color: #777; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.lib-btn:hover { border-color: #444; color: #ccc; }
+.lib-btn.danger:hover { border-color: #f87171; color: #f87171; }
+.lib-btn.play-btn { background: #1DB954; border-color: #1DB954; color: #fff; }
+.lib-btn.play-btn:hover { background: #17a347; }
+.lib-notes { font-size: 11px; color: #555; font-style: italic; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e1e1e; }
+.track-row:last-of-type { border-bottom: none; }
+.track-cover { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.track-cover-placeholder { width: 40px; height: 40px; border-radius: 6px; background: #1e1a3a; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.track-num { font-size: 12px; color: #555; width: 20px; flex-shrink: 0; text-align: center; }
+.track-info { flex: 1; min-width: 0; }
+.track-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-artist { font-size: 12px; color: #777; }
+.phase-badge { font-size: 10px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+.track-bpm-mini { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.track-bpm-mini input[type=range] { width: 65px; height: 3px; }
+.bpm-label { font-size: 11px; color: #666; min-width: 50px; text-align: right; }
+.play-track-btn { width: 32px; height: 32px; border-radius: 50%; border: none; background: #1DB954; color: #fff; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; }
+.play-track-btn:hover { background: #17a347; transform: scale(1.1); }
+.play-track-btn.playing { background: #f87171; }
+.from-library { font-size: 10px; color: #4ade80; margin-left: 4px; }
+.status-ok { background: #0d2b1e; color: #4ade80; border: 1px solid #1a4a30; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+.status-err { background: #2b0d0d; color: #f87171; border: 1px solid #4a1010; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+.empty-state { text-align: center; padding: 3rem 1rem; color: #555; }
+.empty-icon { font-size: 48px; margin-bottom: 1rem; }
+.empty-title { font-size: 16px; font-weight: 600; color: #777; margin-bottom: 6px; }
+.loading-text { text-align: center; padding: 2rem; color: #777; font-size: 14px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.name-input { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid #2a2a2a; background: #0f0f0f; color: #f0f0f0; font-size: 14px; margin-bottom: 1rem; outline: none; }
+.stats-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 1.5rem; }
+.stat-card { background: #141414; border-radius: 12px; border: 1px solid #1e1e1e; padding: 1rem; text-align: center; }
+.stat-num { font-size: 28px; font-weight: 700; color: #6C63FF; }
+.stat-label { font-size: 12px; color: #666; margin-top: 2px; }
+.bottom-player { position: fixed; bottom: 0; left: 0; right: 0; height: 90px; background: #111; border-top: 1px solid #1e1e1e; display: flex; align-items: center; gap: 16px; padding: 0 2rem; z-index: 100; }
+.player-cover { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; background: #1e1e1e; flex-shrink: 0; }
+.player-cover-placeholder { width: 54px; height: 54px; border-radius: 8px; background: #1e1a3a; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+.player-info { min-width: 0; width: 180px; flex-shrink: 0; }
+.player-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-artist { font-size: 12px; color: #777; }
+.player-controls { display: flex; align-items: center; gap: 12px; flex: 1; justify-content: center; flex-direction: column; }
+.player-btns { display: flex; align-items: center; gap: 16px; }
+.ctrl-btn { width: 32px; height: 32px; border-radius: 50%; border: none; background: transparent; color: #aaa; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.ctrl-btn:hover { color: #fff; }
+.ctrl-btn.main { width: 40px; height: 40px; background: #fff; color: #000; font-size: 16px; }
+.ctrl-btn.main:hover { background: #ddd; transform: scale(1.05); }
+.progress-row { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 500px; }
+.progress-time { font-size: 11px; color: #555; min-width: 35px; }
+.progress-bar-wrap { flex: 1; height: 4px; background: #2a2a2a; border-radius: 2px; cursor: pointer; position: relative; }
+.progress-bar-fill { height: 100%; background: #fff; border-radius: 2px; pointer-events: none; }
+.player-volume { display: flex; align-items: center; gap: 8px; width: 130px; flex-shrink: 0; }
+.vol-icon { font-size: 14px; color: #777; }
+.player-status { font-size: 11px; color: #555; }
+
+/* LOGIN PAGE */
+.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0a0a0a; }
+.login-box { text-align: center; padding: 3rem; background: #141414; border-radius: 20px; border: 1px solid #1e1e1e; max-width: 400px; width: 90%; }
+.login-logo { font-size: 48px; margin-bottom: 1rem; }
+.login-title { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+.login-title span { color: #6C63FF; }
+.login-sub { font-size: 14px; color: #666; margin-bottom: 2rem; line-height: 1.6; }
+.login-features { text-align: left; margin-bottom: 2rem; display: flex; flex-direction: column; gap: 8px; }
+.login-feature { font-size: 13px; color: #888; display: flex; align-items: center; gap: 8px; }
+.login-feature span:first-child { font-size: 16px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN PAGE (mostrata se non connesso) -->
+<div id="loginPage" class="login-page">
+  <div class="login-box">
+    <div class="login-logo">🚴</div>
+    <div class="login-title">Spin<span>Flow</span></div>
+    <div class="login-sub">Il tuo assistente AI per creare playlist di spinning perfette. Connetti Spotify per iniziare.</div>
+    <div class="login-features">
+      <div class="login-feature"><span>✨</span> Playlist generate dall'AI in secondi</div>
+      <div class="login-feature"><span>🎵</span> Libreria personale con BPM e note</div>
+      <div class="login-feature"><span>▶</span> Player integrato (Spotify Premium)</div>
+      <div class="login-feature"><span>📋</span> Storico sessioni</div>
+    </div>
+    <button class="btn btn-green btn-full" onclick="startAuth()">Accedi con Spotify</button>
+    <div style="margin-top:12px;font-size:12px;color:#444;">Richiede Spotify Premium per il player</div>
+  </div>
+</div>
+
+<!-- APP (mostrata dopo login) -->
+<div id="appShell" class="app" style="display:none;">
+<div class="top-layout">
+<nav class="sidebar">
+  <div class="logo">🚴 <span>SpinFlow</span></div>
+  <div class="nav-item active" onclick="showPage('generate')" id="nav-generate"><span class="nav-icon">✨</span><span>Genera</span></div>
+  <div class="nav-item" onclick="showPage('library')" id="nav-library"><span class="nav-icon">🎵</span><span>Libreria</span></div>
+  <div class="nav-item" onclick="showPage('history')" id="nav-history"><span class="nav-icon">📋</span><span>Storico</span></div>
+  <div class="sidebar-footer">
+    <div class="spotify-status ok" id="sidebarAuth">⬤ Connesso</div>
+    <div class="nav-item" onclick="logout()" style="margin-top:4px;color:#555;"><span class="nav-icon">🚪</span><span>Esci</span></div>
+  </div>
+</nav>
+
+<main class="main">
+  <!-- GENERATE -->
+  <div class="page active" id="page-generate">
+    <div class="page-title">Genera Playlist</div>
+    <div class="page-sub">Configura la tua sessione e lascia fare all'AI</div>
+    <div class="card"><div class="card-label">Vibe / Mood</div><div class="chip-group" id="vibeGroup"></div></div>
+    <div class="card"><div class="card-label">Genere Musicale</div><div class="chip-group" id="genreGroup"></div></div>
+    <div class="card">
+      <div class="card-label">Parametri Sessione</div>
+      <div class="two-col">
+        <div>
+          <div class="slider-row"><span class="slider-label">Durata</span><input type="range" min="20" max="90" value="45" step="5" id="durationSlider" oninput="updateSliders()"><span class="slider-val" id="durationVal">45 min</span></div>
+          <div class="slider-row"><span class="slider-label">Intensità</span><input type="range" min="1" max="3" value="2" step="1" id="intensitySlider" oninput="updateSliders()"><span class="slider-val" id="intensityVal">Media</span></div>
+          <div class="slider-row"><span class="slider-label">BPM picco</span><input type="range" min="120" max="180" value="155" step="5" id="bpmSlider" oninput="updateSliders()"><span class="slider-val" id="bpmVal">155 bpm</span></div>
+          <div class="slider-row"><span class="slider-label">N° brani</span><input type="range" min="5" max="30" value="13" step="1" id="tracksSlider" oninput="updateSliders()"><span class="slider-val" id="tracksVal">13</span></div>
+        </div>
+        <div>
+          <div style="background:#0f0f0f;border-radius:10px;border:1px solid #1e1e1e;padding:12px;margin-bottom:10px;">
+            <div style="font-size:11px;color:#555;margin-bottom:8px;font-weight:600;">STRUTTURA</div>
+            <div id="structurePreview" style="font-size:12px;color:#888;line-height:2;"></div>
+          </div>
+          <div style="background:#0f0f0f;border-radius:10px;border:1px solid #1e1e1e;padding:12px;">
+            <div style="font-size:11px;color:#555;margin-bottom:6px;font-weight:600;">DALLA LIBRERIA</div>
+            <div id="libraryCount" style="font-size:13px;color:#888;">0 brani</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-label">Struttura Sessione</div><div class="phases" id="phasesGrid"></div></div>
+    <input class="name-input" id="playlistName" value="Spinning Session 🔥" placeholder="Nome playlist" />
+    <button class="btn btn-primary btn-full" id="generateBtn" onclick="generate()">✨ Genera playlist con AI</button>
+    <div id="resultArea"></div>
+  </div>
+
+  <!-- LIBRARY -->
+  <div class="page" id="page-library">
+    <div class="page-title">La tua Libreria</div>
+    <div class="page-sub">Le tue canzoni con dati, note ed esercizi</div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Brani salvati</div></div>
+      <div class="stat-card"><div class="stat-num" id="statAvgBpm">—</div><div class="stat-label">BPM medio</div></div>
+      <div class="stat-card"><div class="stat-num" id="statExercises">—</div><div class="stat-label">Esercizio top</div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Cerca su Spotify</div>
+      <div class="search-box">
+        <input class="search-input" id="searchInput" placeholder="Cerca artista o canzone..." onkeydown="if(event.key==='Enter')searchSpotify()" />
+        <button class="btn btn-primary" onclick="searchSpotify()">Cerca</button>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+    <div id="libraryGrid" class="library-grid"></div>
+    <div id="libraryEmpty" class="empty-state"><div class="empty-icon">🎵</div><div class="empty-title">Libreria vuota</div><div>Cerca una canzone e aggiungila!</div></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="page" id="page-history">
+    <div class="page-title">Storico Sessioni</div>
+    <div class="page-sub">Le playlist che hai generato</div>
+    <div id="historyList"></div>
+    <div id="historyEmpty" class="empty-state" style="display:none;"><div class="empty-icon">📋</div><div class="empty-title">Nessuna sessione ancora</div></div>
+  </div>
+</main>
+</div>
+
+<!-- BOTTOM PLAYER -->
+<div class="bottom-player">
+  <div id="playerCoverWrap"><div class="player-cover-placeholder">🎵</div></div>
+  <div class="player-info">
+    <div class="player-title" id="playerTitle">SpinFlow</div>
+    <div class="player-artist" id="playerArtist" style="color:#444;">Seleziona un brano</div>
+  </div>
+  <div class="player-controls">
+    <div class="player-btns">
+      <button class="ctrl-btn" onclick="playerPrev()">⏮</button>
+      <button class="ctrl-btn main" id="playPauseBtn" onclick="togglePlay()">▶</button>
+      <button class="ctrl-btn" onclick="playerNext()">⏭</button>
+    </div>
+    <div class="progress-row">
+      <span class="progress-time" id="progressCurrent">0:00</span>
+      <div class="progress-bar-wrap" id="progressBar" onclick="seekTo(event)">
+        <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <span class="progress-time" id="progressDuration">0:00</span>
+    </div>
+  </div>
+  <div class="player-volume">
+    <span class="vol-icon">🔈</span>
+    <input type="range" min="0" max="100" value="80" id="volumeSlider" oninput="setVolume(this.value)" style="flex:1;">
+  </div>
+  <div id="playerStatus" style="font-size:11px;color:#555;min-width:80px;text-align:right;"></div>
+</div>
+</div>
+
+<!-- ADD MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-title">Aggiungi alla Libreria</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:10px;background:#0f0f0f;border-radius:10px;margin-bottom:1.5rem;">
+      <img id="modalCover" src="" style="width:52px;height:52px;border-radius:8px;object-fit:cover;display:none;" />
+      <div><div id="modalTitle" style="font-size:14px;font-weight:600;"></div><div id="modalArtist" style="font-size:12px;color:#888;margin-top:2px;"></div></div>
+    </div>
+    <div class="form-row-inline">
+      <div><label class="form-label">BPM</label><input class="form-input" type="number" id="modalBpm" min="60" max="200" value="140" /></div>
+      <div><label class="form-label">Vibe</label><select class="form-input" id="modalVibe"><option>Energica</option><option>Motivante</option><option>Dark</option><option>Euphoric</option><option>SoulCycle</option><option>Chill recovery</option></select></div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Tipo di esercizio</label>
+      <div class="exercise-chips" id="modalExercises">
+        <div class="ex-chip" data-val="sprint">Sprint</div><div class="ex-chip" data-val="salita">Salita</div>
+        <div class="ex-chip" data-val="recovery">Recovery</div><div class="ex-chip" data-val="corsa">Corsa piatta</div>
+        <div class="ex-chip" data-val="hiit">HIIT</div><div class="ex-chip" data-val="warmup">Warm-up</div>
+        <div class="ex-chip" data-val="cooldown">Cool-down</div><div class="ex-chip" data-val="resistenza">Resistenza</div>
+      </div>
+    </div>
+    <div class="form-row"><label class="form-label">Note personali</label><textarea class="form-input" id="modalNotes" placeholder="Es: perfetta per il picco finale..."></textarea></div>
+    <div class="form-row"><label class="form-label">Fase consigliata</label><select class="form-input" id="modalPhase"><option>Warm-up</option><option>Build</option><option>Peak</option><option>Recover</option><option>Cool-down</option></select></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveToLibrary()">Salva in Libreria</button>
+      <button class="btn btn-outline" onclick="closeModal()">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+<script>
+const CLIENT_ID = '671b292379ce41a788a91c5927d7f202';
+const CLIENT_SECRET = 'd372fed4d1954dbc888db38c30cb3744';
+// IMPORTANTE: cambia questo con il tuo URL Netlify dopo il deploy!
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+let accessToken = null;
+let refreshToken = null;
+let tokenExpiry = 0;
+let library = JSON.parse(localStorage.getItem('spinflow_library')||'[]');
+let sessionHistory = JSON.parse(localStorage.getItem('spinflow_history')||'[]');
+let pendingTrack = null;
+let generatedTracks = [];
+let spotifyPlayer = null;
+let deviceId = null;
+let playerReady = false;
+let currentQueue = [];
+let currentQueueIndex = -1;
+let isPlaying = false;
+let progressInterval = null;
+let currentPosition = 0;
+let currentDuration = 0;
+
+const VIBES = ['Energica','Motivante','Dark','Euphoric','SoulCycle','Chill recovery'];
+const GENRES = ['Pop','Hip-hop','Electronic / EDM','Latin','Rock','R&B','House'];
+const PHASES_DEF = [
+  {name:'Warm-up',  pct:.15,mult:.72,bg:'#0d2b1e',color:'#4ade80',border:'#1a4a30'},
+  {name:'Build',    pct:.20,mult:.87,bg:'#2b1e0d',color:'#fbbf24',border:'#4a3010'},
+  {name:'Peak',     pct:.30,mult:1.0,bg:'#2b0d0d',color:'#f87171',border:'#4a1010'},
+  {name:'Recover',  pct:.20,mult:.82,bg:'#0d1e2b',color:'#60a5fa',border:'#103040'},
+  {name:'Cool-down',pct:.15,mult:.65,bg:'#1a0d2b',color:'#a78bfa',border:'#2a1040'}
+];
+const PHASE_MAP = Object.fromEntries(PHASES_DEF.map(p=>[p.name,p]));
+const EXERCISE_COLORS = {sprint:'#f87171',salita:'#fbbf24',recovery:'#60a5fa',corsa:'#4ade80',hiit:'#f87171',warmup:'#4ade80',cooldown:'#a78bfa',resistenza:'#fbbf24'};
+
+// ---- AUTH con refresh token automatico ----
+function startAuth() {
+  const state = Math.random().toString(36).substring(2);
+  sessionStorage.setItem('sp_state', state);
+  const p = new URLSearchParams({
+    response_type:'code', client_id:CLIENT_ID,
+    scope:'playlist-modify-public playlist-modify-private user-read-private streaming user-read-playback-state user-modify-playback-state',
+    redirect_uri: REDIRECT_URI, state, access_type:'offline'
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + p;
+}
+
+async function exchangeCode(code) {
+  const body = new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:REDIRECT_URI,client_id:CLIENT_ID,client_secret:CLIENT_SECRET});
+  const res = await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
+  return res.json();
+}
+
+async function refreshAccessToken() {
+  const rt = localStorage.getItem('sp_refresh_token');
+  if (!rt) { logout(); return false; }
+  try {
+    const body = new URLSearchParams({grant_type:'refresh_token',refresh_token:rt,client_id:CLIENT_ID,client_secret:CLIENT_SECRET});
+    const res = await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
+    const data = await res.json();
+    if (data.access_token) {
+      accessToken = data.access_token;
+      tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+      localStorage.setItem('sp_access_token', accessToken);
+      localStorage.setItem('sp_token_expiry', tokenExpiry.toString());
+      if (data.refresh_token) localStorage.setItem('sp_refresh_token', data.refresh_token);
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+async function getValidToken() {
+  if (!accessToken) return null;
+  if (Date.now() > tokenExpiry) {
+    const ok = await refreshAccessToken();
+    if (!ok) return null;
+  }
+  return accessToken;
+}
+
+// Auto-refresh ogni 50 minuti
+setInterval(async () => {
+  if (accessToken) await refreshAccessToken();
+}, 50 * 60 * 1000);
+
+async function init() {
+  const code = new URLSearchParams(window.location.search).get('code');
+  if (code) {
+    window.history.replaceState({}, '', window.location.pathname);
+    try {
+      const data = await exchangeCode(code);
+      if (data.access_token) {
+        accessToken = data.access_token;
+        tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+        localStorage.setItem('sp_access_token', accessToken);
+        localStorage.setItem('sp_token_expiry', tokenExpiry.toString());
+        if (data.refresh_token) localStorage.setItem('sp_refresh_token', data.refresh_token);
+        showApp();
+        return;
+      }
+    } catch(e) {}
+  }
+  const saved = localStorage.getItem('sp_access_token');
+  const expiry = parseInt(localStorage.getItem('sp_token_expiry')||'0');
+  const rt = localStorage.getItem('sp_refresh_token');
+  if (saved && rt) {
+    accessToken = saved;
+    tokenExpiry = expiry;
+    if (Date.now() > tokenExpiry) {
+      const ok = await refreshAccessToken();
+      if (!ok) { showLogin(); return; }
+    }
+    showApp();
+  } else {
+    showLogin();
+  }
+}
+
+function showLogin() {
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('appShell').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appShell').style.display = 'flex';
+  makeChips('vibeGroup', VIBES);
+  makeChips('genreGroup', GENRES);
+  updateSliders();
+  updateLibraryCount();
+  if (window.Spotify) initPlayer();
+}
+
+function logout() {
+  localStorage.removeItem('sp_access_token');
+  localStorage.removeItem('sp_refresh_token');
+  localStorage.removeItem('sp_token_expiry');
+  accessToken = null;
+  spotifyPlayer?.disconnect();
+  spotifyPlayer = null;
+  playerReady = false;
+  showLogin();
+}
+
+// ---- SPOTIFY PLAYER ----
+window.onSpotifyWebPlaybackSDKReady = () => { if (accessToken) initPlayer(); };
+
+function initPlayer() {
+  if (!accessToken || spotifyPlayer) return;
+  spotifyPlayer = new Spotify.Player({
+    name: 'SpinFlow Player',
+    getOAuthToken: async cb => { const t = await getValidToken(); cb(t); },
+    volume: 0.8
+  });
+  spotifyPlayer.addListener('ready', ({device_id}) => {
+    deviceId = device_id; playerReady = true;
+    setPlayerStatus('Player pronto ✓'); setTimeout(()=>setPlayerStatus(''),3000);
+  });
+  spotifyPlayer.addListener('not_ready', () => { playerReady = false; });
+  spotifyPlayer.addListener('player_state_changed', state => {
+    if (!state) return;
+    isPlaying = !state.paused;
+    currentPosition = state.position; currentDuration = state.duration;
+    document.getElementById('playPauseBtn').textContent = isPlaying ? '⏸' : '▶';
+    if (state.track_window?.current_track) {
+      const t = state.track_window.current_track;
+      updatePlayerUI(t.name, t.artists[0].name, t.album.images[0]?.url);
+    }
+    updateProgress();
+    isPlaying ? startProgressTimer() : stopProgressTimer();
+    updatePlayButtons();
+  });
+  spotifyPlayer.addListener('account_error', () => setPlayerStatus('Richiede Premium'));
+  spotifyPlayer.connect();
+}
+
+function setPlayerStatus(msg) { document.getElementById('playerStatus').textContent = msg; }
+
+function updatePlayerUI(title, artist, cover) {
+  document.getElementById('playerTitle').textContent = title;
+  document.getElementById('playerArtist').textContent = artist;
+  document.getElementById('playerCoverWrap').innerHTML = cover
+    ? `<img class="player-cover" src="${cover}" />`
+    : `<div class="player-cover-placeholder">🎵</div>`;
+}
+
+function startProgressTimer() {
+  stopProgressTimer();
+  progressInterval = setInterval(() => { currentPosition = Math.min(currentPosition+500, currentDuration); updateProgress(); }, 500);
+}
+function stopProgressTimer() { if(progressInterval){clearInterval(progressInterval);progressInterval=null;} }
+
+function updateProgress() {
+  const pct = currentDuration>0 ? (currentPosition/currentDuration)*100 : 0;
+  document.getElementById('progressFill').style.width = Math.min(pct,100)+'%';
+  document.getElementById('progressCurrent').textContent = msToTime(currentPosition);
+  document.getElementById('progressDuration').textContent = msToTime(currentDuration);
+}
+function msToTime(ms) { const s=Math.floor(ms/1000); return Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0'); }
+
+async function seekTo(e) {
+  if(!spotifyPlayer||!currentDuration) return;
+  const rect=document.getElementById('progressBar').getBoundingClientRect();
+  await spotifyPlayer.seek(Math.floor(((e.clientX-rect.left)/rect.width)*currentDuration));
+}
+async function togglePlay() { if(playerReady) await spotifyPlayer.togglePlay(); else setPlayerStatus('Player non pronto'); }
+async function playerNext() { if(playerReady&&currentQueueIndex<currentQueue.length-1){currentQueueIndex++;await playTrackUri(currentQueue[currentQueueIndex].uri,currentQueueIndex);} }
+async function playerPrev() { if(playerReady&&currentQueueIndex>0){currentQueueIndex--;await playTrackUri(currentQueue[currentQueueIndex].uri,currentQueueIndex);} }
+async function setVolume(v) { if(spotifyPlayer) await spotifyPlayer.setVolume(v/100); }
+
+async function playTrackUri(uri, index) {
+  if (!playerReady||!deviceId) { setPlayerStatus('Player non pronto'); return; }
+  if(index!==undefined) currentQueueIndex=index;
+  const token = await getValidToken();
+  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,{
+    method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({uris:[uri]})
+  });
+}
+
+async function playTrackBySearch(title, artist, index) {
+  setPlayerStatus('Cercando...');
+  const token = await getValidToken();
+  const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(title+' '+artist)}&type=track&limit=1`,{headers:{Authorization:'Bearer '+token}});
+  const data = await res.json();
+  if(data.tracks?.items?.[0]) {
+    const uri=data.tracks.items[0].uri;
+    if(currentQueue[index]) currentQueue[index].uri=uri;
+    await playTrackUri(uri,index);
+  } else setPlayerStatus('Brano non trovato');
+}
+
+function updatePlayButtons() {
+  document.querySelectorAll('.play-track-btn').forEach((btn,i)=>{
+    const active = i===currentQueueIndex&&isPlaying;
+    btn.textContent = active?'⏸':'▶';
+    btn.classList.toggle('playing',active);
+  });
+}
+
+// ---- NAV ----
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('nav-'+page).classList.add('active');
+  if(page==='library') renderLibrary();
+  if(page==='history') renderHistory();
+}
+
+// ---- CHIPS & SLIDERS ----
+function makeChips(id,items) {
+  const g=document.getElementById(id); if(g.children.length>0) return;
+  items.forEach((label,i)=>{
+    const d=document.createElement('div');
+    d.className='chip'+(i===0?' active':'');
+    d.textContent=label; d.dataset.val=label.toLowerCase();
+    d.onclick=()=>d.classList.toggle('active');
+    g.appendChild(d);
+  });
+}
+function getSelected(id){return[...document.querySelectorAll('#'+id+' .chip.active')].map(c=>c.dataset.val);}
+
+function updateSliders(){
+  const dur=+document.getElementById('durationSlider').value;
+  const bpm=+document.getElementById('bpmSlider').value;
+  const int=+document.getElementById('intensitySlider').value;
+  const n=+document.getElementById('tracksSlider').value;
+  document.getElementById('durationVal').textContent=dur+' min';
+  document.getElementById('bpmVal').textContent=bpm+' bpm';
+  document.getElementById('intensityVal').textContent=['','Bassa','Media','Alta'][int];
+  document.getElementById('tracksVal').textContent=n;
+  renderPhases(); renderStructurePreview(n);
+}
+
+function renderPhases(){
+  const dur=+document.getElementById('durationSlider').value;
+  const bpm=+document.getElementById('bpmSlider').value;
+  document.getElementById('phasesGrid').innerHTML=PHASES_DEF.map(p=>`
+    <div class="phase" style="background:${p.bg};border:1px solid ${p.border}">
+      <div class="phase-name" style="color:${p.color}">${p.name}</div>
+      <div class="phase-bpm" style="color:${p.color}">${Math.round(bpm*p.mult)}</div>
+      <div class="phase-min" style="color:${p.color}">${Math.round(dur*p.pct)} min</div>
+    </div>`).join('');
+}
+
+function getPhaseDistribution(n){
+  const dist=PHASES_DEF.map(p=>({name:p.name,count:Math.max(1,Math.round(n*p.pct))}));
+  const total=dist.reduce((s,d)=>s+d.count,0),diff=n-total;
+  if(diff>0)dist[2].count+=diff; else if(diff<0)dist[2].count=Math.max(1,dist[2].count+diff);
+  return dist;
+}
+
+function renderStructurePreview(n){
+  document.getElementById('structurePreview').innerHTML=getPhaseDistribution(n).map(d=>`${d.name}: <span style="color:#f0f0f0;font-weight:600;">${d.count}</span>`).join('<br>');
+}
+
+function updateLibraryCount(){
+  const el=document.getElementById('libraryCount');
+  if(el) el.textContent=library.length>0?`${library.length} brani disponibili`:'0 brani';
+}
+
+// ---- SEARCH ----
+async function searchSpotify(){
+  const q=document.getElementById('searchInput').value.trim();
+  if(!q) return;
+  document.getElementById('searchResults').innerHTML='<div class="loading-text">Cercando...</div>';
+  const token = await getValidToken();
+  if(!token){document.getElementById('searchResults').innerHTML='<div class="status-err">Token scaduto — ricarica la pagina</div>';return;}
+  try{
+    const res=await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=8`,{headers:{Authorization:'Bearer '+token}});
+    const data=await res.json();
+    if(!data.tracks?.items?.length){document.getElementById('searchResults').innerHTML='<div style="color:#777;font-size:13px;padding:10px;">Nessun risultato</div>';return;}
+    document.getElementById('searchResults').innerHTML=`<div class="search-results">${data.tracks.items.map(t=>{
+      const cover=t.album.images[0]?.url||'';
+      const dur=Math.floor(t.duration_ms/60000)+':'+(Math.floor((t.duration_ms%60000)/1000)).toString().padStart(2,'0');
+      return `<div class="search-result-item">
+        ${cover?`<img class="search-cover" src="${cover}" />`:'<div class="search-cover"></div>'}
+        <div class="search-info" onclick="openAddModal('${t.id}','${esc(t.name)}','${esc(t.artists[0].name)}','${cover}','${t.uri}')">
+          <div class="search-title">${t.name}</div>
+          <div class="search-artist">${t.artists[0].name} · ${t.album.name}</div>
+        </div>
+        <button onclick="playDirectUri('${t.uri}','${esc(t.name)}','${esc(t.artists[0].name)}','${cover}')" style="width:32px;height:32px;border-radius:50%;border:none;background:#1DB954;color:#fff;font-size:12px;cursor:pointer;flex-shrink:0;">▶</button>
+        <div style="font-size:12px;color:#555;flex-shrink:0;">${dur}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }catch(e){document.getElementById('searchResults').innerHTML='<div class="status-err">Errore ricerca</div>';}
+}
+
+function esc(s){return(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+
+async function playDirectUri(uri,title,artist,cover){
+  updatePlayerUI(title,artist,cover);
+  currentQueue=[{uri,title,artist,cover}]; currentQueueIndex=0;
+  await playTrackUri(uri,0);
+}
+
+// ---- MODAL ----
+function openAddModal(id,title,artist,cover,uri){
+  pendingTrack={id,title,artist,cover,uri};
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalArtist').textContent=artist;
+  const img=document.getElementById('modalCover');
+  if(cover){img.src=cover;img.style.display='block';}else{img.style.display='none';}
+  document.querySelectorAll('.ex-chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('modalNotes').value='';
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');pendingTrack=null;}
+document.querySelectorAll('.ex-chip').forEach(c=>c.onclick=()=>c.classList.toggle('active'));
+
+function saveToLibrary(){
+  if(!pendingTrack) return;
+  const entry={...pendingTrack,bpm:+document.getElementById('modalBpm').value,vibe:document.getElementById('modalVibe').value,phase:document.getElementById('modalPhase').value,exercises:[...document.querySelectorAll('.ex-chip.active')].map(c=>c.dataset.val),notes:document.getElementById('modalNotes').value,addedAt:new Date().toISOString(),usedCount:0};
+  library=library.filter(t=>t.id!==entry.id);
+  library.unshift(entry);
+  localStorage.setItem('spinflow_library',JSON.stringify(library));
+  closeModal(); renderLibrary(); updateLibraryCount(); updateLibraryStats();
+}
+
+// ---- LIBRARY ----
+function renderLibrary(){
+  updateLibraryStats();
+  if(!library.length){document.getElementById('libraryGrid').style.display='none';document.getElementById('libraryEmpty').style.display='block';return;}
+  document.getElementById('libraryGrid').style.display='grid';
+  document.getElementById('libraryEmpty').style.display='none';
+  document.getElementById('libraryGrid').innerHTML=library.map((t,i)=>{
+    const p=PHASE_MAP[t.phase]||PHASES_DEF[2];
+    const exTags=t.exercises.map(e=>`<span class="lib-tag" style="background:#1a1a1a;color:${EXERCISE_COLORS[e]||'#888'};border:1px solid #2a2a2a">${e}</span>`).join('');
+    return `<div class="lib-card">
+      ${t.cover?`<img class="lib-cover" src="${t.cover}" />`:`<div class="lib-cover-placeholder">🎵</div>`}
+      <div class="lib-info">
+        <div class="lib-title">${t.title}</div>
+        <div class="lib-artist">${t.artist}</div>
+        <div class="lib-tags"><span class="lib-tag" style="background:${p.bg};color:${p.color};border:1px solid ${p.border}">${t.phase}</span><span class="lib-tag" style="background:#1a1a2a;color:#a89bff;border:1px solid #2a2040">${t.vibe}</span></div>
+        <div class="lib-tags">${exTags}</div>
+        <div class="lib-bpm">${t.bpm} BPM</div>
+        ${t.notes?`<div class="lib-notes">"${t.notes}"</div>`:''}
+        <div class="lib-actions">
+          <button class="lib-btn play-btn" onclick="playLibTrack(${i})">▶ Play</button>
+          <button class="lib-btn" onclick="editLibraryItem(${i})">Modifica</button>
+          <button class="lib-btn danger" onclick="removeFromLibrary(${i})">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function playLibTrack(i){
+  const t=library[i];
+  updatePlayerUI(t.title,t.artist,t.cover);
+  currentQueue=library.map(l=>({uri:l.uri||null,title:l.title,artist:l.artist,cover:l.cover}));
+  currentQueueIndex=i;
+  if(t.uri) await playTrackUri(t.uri,i);
+  else await playTrackBySearch(t.title,t.artist,i);
+}
+
+function updateLibraryStats(){
+  document.getElementById('statTotal').textContent=library.length;
+  if(library.length){
+    document.getElementById('statAvgBpm').textContent=Math.round(library.reduce((s,t)=>s+t.bpm,0)/library.length);
+    const ex={};library.forEach(t=>t.exercises.forEach(e=>ex[e]=(ex[e]||0)+1));
+    const top=Object.entries(ex).sort((a,b)=>b[1]-a[1])[0];
+    document.getElementById('statExercises').textContent=top?top[0]:'—';
+  }
+}
+
+function removeFromLibrary(i){library.splice(i,1);localStorage.setItem('spinflow_library',JSON.stringify(library));renderLibrary();updateLibraryCount();}
+
+function editLibraryItem(i){
+  const t=library[i];
+  pendingTrack={id:t.id,title:t.title,artist:t.artist,cover:t.cover,uri:t.uri};
+  document.getElementById('modalTitle').textContent=t.title;
+  document.getElementById('modalArtist').textContent=t.artist;
+  const img=document.getElementById('modalCover');
+  if(t.cover){img.src=t.cover;img.style.display='block';}else{img.style.display='none';}
+  document.getElementById('modalBpm').value=t.bpm;
+  document.getElementById('modalVibe').value=t.vibe;
+  document.getElementById('modalPhase').value=t.phase;
+  document.getElementById('modalNotes').value=t.notes||'';
+  document.querySelectorAll('.ex-chip').forEach(c=>c.classList.toggle('active',t.exercises.includes(c.dataset.val)));
+  library.splice(i,1);
+  localStorage.setItem('spinflow_library',JSON.stringify(library));
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+// ---- GENERATE ----
+async function generate(){
+  const vibes=getSelected('vibeGroup'),genres=getSelected('genreGroup');
+  const dur=+document.getElementById('durationSlider').value,bpm=+document.getElementById('bpmSlider').value;
+  const int=+document.getElementById('intensitySlider').value,n=+document.getElementById('tracksSlider').value;
+  const intLabel=['','bassa','media','alta'][int];
+  const dist=getPhaseDistribution(n);
+  const libCtx=library.length>0?`\nBrani in libreria (usali dove si adattano):\n${library.map(t=>`- "${t.title}" di ${t.artist} (${t.bpm}BPM, ${t.phase}, ${t.exercises.join('/')}${t.notes?', '+t.notes:''})`).join('\n')}`:'';
+
+  document.getElementById('resultArea').innerHTML='<div class="loading-text">Generando playlist... ✨</div>';
+  document.getElementById('generateBtn').disabled=true;
+
+  const token = await getValidToken();
+  if(!token){document.getElementById('resultArea').innerHTML='<div class="status-err">Token scaduto — ricarica la pagina</div>';document.getElementById('generateBtn').disabled=false;return;}
+
+  const prompt=`Esperto DJ spinning. Playlist: ${dur}min, intensità ${intLabel}, BPM picco ${bpm}, vibe: ${vibes.join(',')||'energica'}, generi: ${genres.join(',')||'pop'}. Distribuzione: ${dist.map(d=>d.name+':'+d.count).join(',')}.${libCtx}\nRispondi SOLO JSON valido: {"tracks":[{"title":"","artist":"","bpm":140,"phase":"Warm-up","fromLibrary":false}]}`;
+
+  try{
+    const res=await fetch('/.netlify/functions/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}]})});
+    const data=await res.json();
+    const text=(data.choices?.[0]?.message?.content||'').replace(/```json|```/g,'').trim();
+    generatedTracks=JSON.parse(text).tracks;
+    currentQueue=generatedTracks.map(t=>({uri:null,title:t.title,artist:t.artist}));
+    library.forEach(l=>{if(generatedTracks.find(t=>t.title===l.title&&t.artist===l.artist))l.usedCount=(l.usedCount||0)+1;});
+    localStorage.setItem('spinflow_library',JSON.stringify(library));
+    renderGeneratedTracks();
+  }catch(e){
+    document.getElementById('resultArea').innerHTML='<div class="status-err">Errore nella generazione. Riprova!</div>';
+  }
+  document.getElementById('generateBtn').disabled=false;
+}
+
+function renderGeneratedTracks(){
+  const rows=generatedTracks.map((t,i)=>{
+    const p=PHASE_MAP[t.phase]||PHASES_DEF[2];
+    const libEntry=library.find(l=>l.title===t.title&&l.artist===t.artist);
+    const coverHtml=libEntry?.cover?`<img class="track-cover" src="${libEntry.cover}" />`:`<div class="track-cover-placeholder">🎵</div>`;
+    return `<div class="track-row">
+      <button class="play-track-btn" id="ptb-${i}" onclick="playGeneratedTrack(${i})">▶</button>
+      <span class="track-num">${i+1}</span>${coverHtml}
+      <div class="track-info">
+        <div class="track-title">${t.title}${t.fromLibrary?'<span class="from-library">★</span>':''}</div>
+        <div class="track-artist">${t.artist}</div>
+      </div>
+      <span class="phase-badge" style="background:${p.bg};color:${p.color};border:1px solid ${p.border}">${t.phase}</span>
+      <div class="track-bpm-mini">
+        <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:60px;">
+        <span class="bpm-label" id="bpm-${i}">${t.bpm}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const saveBtn=`<button class="btn btn-green btn-full" style="margin-top:14px;" id="saveBtn" onclick="savePlaylist()">💚 Salva su Spotify</button>`;
+  document.getElementById('resultArea').innerHTML=`<div class="card" style="margin-top:1rem;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;"><div style="font-size:15px;font-weight:700;">${generatedTracks.length} brani · ${document.getElementById('durationSlider').value} min</div><div style="font-size:12px;color:#555;">${generatedTracks.filter(t=>t.fromLibrary).length} dalla libreria</div></div>${rows}${saveBtn}</div>`;
+}
+
+async function playGeneratedTrack(i){
+  currentQueueIndex=i;
+  const t=generatedTracks[i];
+  updatePlayerUI(t.title,t.artist,library.find(l=>l.title===t.title)?.cover||null);
+  if(currentQueue[i]?.uri) await playTrackUri(currentQueue[i].uri,i);
+  else await playTrackBySearch(t.title,t.artist,i);
+}
+
+function updateBpm(i,val){generatedTracks[i].bpm=+val;document.getElementById('bpm-'+i).textContent=val;}
+
+async function savePlaylist(){
+  const btn=document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvataggio...';
+  const token=await getValidToken();
+  if(!token){btn.textContent='Token scaduto';btn.disabled=false;return;}
+  try{
+    const me=await (await fetch('https://api.spotify.com/v1/me',{headers:{Authorization:'Bearer '+token}})).json();
+    const plName=document.getElementById('playlistName').value||'Spinning Session';
+    const pl=await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:plName,description:'Creata con SpinFlow',public:false})})).json();
+    const uris=[];
+    for(const t of generatedTracks){
+      const s=await (await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(t.title+' '+t.artist)}&type=track&limit=1`,{headers:{Authorization:'Bearer '+token}})).json();
+      if(s.tracks?.items?.[0]) uris.push(s.tracks.items[0].uri);
+    }
+    if(uris.length) await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({uris})});
+    sessionHistory.unshift({id:Date.now(),name:plName,date:new Date().toISOString(),tracks:generatedTracks,trackCount:uris.length});
+    localStorage.setItem('spinflow_history',JSON.stringify(sessionHistory));
+    btn.textContent=`✓ Salvata! (${uris.length}/${generatedTracks.length})`;btn.style.background='#15803d';
+  }catch(e){btn.textContent='Errore.';btn.disabled=false;}
+}
+
+// ---- HISTORY ----
+function renderHistory(){
+  if(!sessionHistory.length){document.getElementById('historyList').innerHTML='';document.getElementById('historyEmpty').style.display='block';return;}
+  document.getElementById('historyEmpty').style.display='none';
+  document.getElementById('historyList').innerHTML=sessionHistory.map(s=>`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-weight:600;">${s.name}</div><div style="font-size:12px;color:#555;">${new Date(s.date).toLocaleDateString('it-IT')}</div></div><div style="font-size:13px;color:#777;margin-bottom:10px;">${s.trackCount} brani su Spotify</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.tracks.slice(0,5).map(t=>{const p=PHASE_MAP[t.phase]||PHASES_DEF[2];return`<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:${p.bg};color:${p.color};border:1px solid ${p.border}">${t.title}</span>`;}).join('')}${s.tracks.length>5?`<span style="font-size:11px;color:#555;">+${s.tracks.length-5}</span>`:''}</div></div>`).join('');
+}
+
+init();
+</script>
+</body>
+</html>
