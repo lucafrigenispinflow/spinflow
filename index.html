@@ -1012,20 +1012,19 @@ async function searchTrackWithBpm(query, targetBpm, token) {
   } catch(e) { return null; }
 }
 
-// ---- SEARCH TRACK + SAVE PLAYLIST ----
+// ---- SEARCH TRACK ----
 
 async function searchTrackWithBpm(query, targetBpm, token) {
-  const halfBpm = Math.round(targetBpm / 2);
-  const doubleBpm = targetBpm * 2;
   try {
     const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`, {headers:{Authorization:'Bearer '+token}});
     const data = await res.json();
     const tracks = data.tracks?.items || [];
     if (!tracks.length) return null;
-    // senza audio-features: prendi semplicemente il primo risultato
     return { track: tracks[0], bpm: targetBpm, diff: 0 };
   } catch(e) { return null; }
 }
+
+// ---- SAVE PLAYLIST ----
 
 async function savePlaylist() {
   const btn = document.getElementById('saveBtn');
@@ -1042,25 +1041,34 @@ async function savePlaylist() {
   }
 
   try {
-    const meRes = await fetch('https://api.spotify.com/v1/me', {headers:{Authorization:'Bearer '+token}});
-    if (!meRes.ok) {
-      const e = await meRes.json().catch(()=>({}));
-      throw new Error(`Profilo non recuperato (${meRes.status}): ${e?.error?.message||'rieffettua il login'}`);
-    }
-    const me = await meRes.json();
-
+    // Usa /me/playlists — non richiede userId, meno restrittivo
     const plName = document.getElementById('playlistName').value || 'Spinning Session 🔥';
-    const plRes = await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`, {
-      method:'POST',
-      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({name:plName, description:`Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`, public:false})
+    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
+      method: 'POST',
+      headers: {Authorization:'Bearer '+token, 'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: plName,
+        description: `Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`,
+        public: false
+      })
     });
+
     if (!plRes.ok) {
       const e = await plRes.json().catch(()=>({}));
+      // Se ancora 403, mostra messaggio guidato
+      if (plRes.status === 403) {
+        btn.textContent = '⚠️ Aggiungi il tuo account nella Spotify Dashboard';
+        btn.style.background = '#92400e';
+        btn.style.color = '#fde68a';
+        btn.disabled = false;
+        document.getElementById('spotifyDashboardMsg').style.display = 'block';
+        return;
+      }
       throw new Error(`Creazione playlist fallita (${plRes.status}): ${e?.error?.message||''}`);
     }
     const pl = await plRes.json();
 
+    // Cerca URI per ogni brano
     const uris = [];
     const notFound = [];
     for (const t of generatedTracks) {
@@ -1078,9 +1086,9 @@ async function savePlaylist() {
     if (!uris.length) throw new Error('Nessun brano trovato su Spotify.');
 
     const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
-      method:'POST',
-      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({uris})
+      method: 'POST',
+      headers: {Authorization:'Bearer '+token, 'Content-Type':'application/json'},
+      body: JSON.stringify({uris})
     });
     if (!addRes.ok) {
       const e = await addRes.json().catch(()=>({}));
@@ -1100,7 +1108,7 @@ async function savePlaylist() {
     btn.textContent = `❌ ${err.message}`;
     btn.style.background = '#7f1d1d';
     btn.style.color = '#fca5a5';
-    setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 7000);
+    setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 8000);
   }
 }
 
@@ -1145,7 +1153,7 @@ async function generate() {
 
   const systemPrompt = `Sei un DJ professionista specializzato in spinning indoor con conoscenza ENCICLOPEDICA di tutta la musica su Spotify: mainstream, underground, latina, elettronica, anni '80/'90/'00/'10/'20, internazionale e italiana.
 Suggerisci canzoni REALI ed ESISTENTI su Spotify. Varia MOLTO gli artisti (mai lo stesso due volte). Alterna epoche. Sii CORAGGIOSO: scegli anche canzoni meno ovvie, non solo le hit più famose.
-Vibe richiesto: ${vibes.join(', ')}. Generi: ${genres.join(', ')}. Flavour creativo di questa sessione: ${seed}.${avoidBlock}${libBlock}
+Vibe: ${vibes.join(', ')}. Generi: ${genres.join(', ')}. Flavour di questa sessione: ${seed}.${avoidBlock}${libBlock}
 Rispondi SOLO con un array JSON valido, senza testo prima o dopo, senza backtick.`;
 
   const userPrompt = `Crea una playlist di spinning per "${playlistName}".
@@ -1156,15 +1164,8 @@ Per ogni blocco suggerisci UNA canzone. Restituisci ESATTAMENTE ${sessionBlocks.
 
   try {
     const res = await fetch('/.netlify/functions/generate', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        temperature: 1.15,
-        messages:[
-          {role:'system', content:systemPrompt},
-          {role:'user', content:userPrompt}
-        ]
-      })
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({temperature:1.15, messages:[{role:'system',content:systemPrompt},{role:'user',content:userPrompt}]})
     });
     if (!res.ok) throw new Error('Netlify Function error: ' + res.status);
     const data = await res.json();
@@ -1256,6 +1257,12 @@ function renderResult(tracks) {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px;">
       <div class="card-label" style="margin-bottom:0;">🎵 Playlist — ${tracks.length} brani</div>
       <button id="saveBtn" onclick="savePlaylist()" class="btn btn-green" style="font-size:13px;padding:8px 18px;">💚 Salva su Spotify</button>
+    </div>
+    <div id="spotifyDashboardMsg" style="display:none;background:#1c1500;border:1px solid #92400e;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:12px;color:#fde68a;line-height:1.6;">
+      ⚠️ <strong>L'app Spotify è in Development Mode.</strong><br>
+      Vai su <a href="https://developer.spotify.com/dashboard" target="_blank" style="color:#fbbf24;">developer.spotify.com/dashboard</a>
+      → clicca la tua app → <strong>Settings</strong> → <strong>User Management</strong> → aggiungi la tua email Spotify → Save.<br>
+      Poi riprova a salvare.
     </div>`;
 
   tracks.forEach((t,i) => {
