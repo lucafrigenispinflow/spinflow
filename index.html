@@ -1012,30 +1012,272 @@ async function searchTrackWithBpm(query, targetBpm, token) {
   } catch(e) { return null; }
 }
 
-async function savePlaylist(){
-  const btn=document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvataggio...';
-  const token=await getValidToken();
-  if(!token){btn.textContent='Token scaduto — rieffettua il login';btn.disabled=false;return;}
-  try{
-    const meRes=await fetch('https://api.spotify.com/v1/me',{headers:{Authorization:'Bearer '+token}});
-    if(!meRes.ok){localStorage.removeItem('sp_access_token');btn.textContent='Sessione scaduta — ricarica e rifai login';btn.disabled=false;return;}
-    const me=await meRes.json();
-    const plName=document.getElementById('playlistName').value||'Spinning Session';
-    const pl=await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:plName,description:'Creata con SpinFlow',public:false})})).json();
-    const uris=[];
-    for(const t of generatedTracks){
-      const result = await searchTrackWithBpm(`${t.title} ${t.artist}`, t.bpm, token);
-      if(result) { uris.push(result.track.uri); t.actualBpm=result.bpm; }
-      else {
-        const s=await (await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(t.title+' '+t.artist)}&type=track&limit=1`,{headers:{Authorization:'Bearer '+token}})).json();
-        if(s.tracks?.items?.[0]) uris.push(s.tracks.items[0].uri);
-      }
+// ---- SEARCH TRACK + SAVE PLAYLIST ----
+
+async function searchTrackWithBpm(query, targetBpm, token) {
+  const halfBpm = Math.round(targetBpm / 2);
+  const doubleBpm = targetBpm * 2;
+  try {
+    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`, {headers:{Authorization:'Bearer '+token}});
+    const data = await res.json();
+    const tracks = data.tracks?.items || [];
+    if (!tracks.length) return null;
+    // senza audio-features: prendi semplicemente il primo risultato
+    return { track: tracks[0], bpm: targetBpm, diff: 0 };
+  } catch(e) { return null; }
+}
+
+async function savePlaylist() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Salvataggio...';
+  btn.style.background = '';
+  btn.style.color = '';
+
+  const token = await getValidToken();
+  if (!token) {
+    btn.textContent = '❌ Token scaduto — fai logout e riaccedi';
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const meRes = await fetch('https://api.spotify.com/v1/me', {headers:{Authorization:'Bearer '+token}});
+    if (!meRes.ok) {
+      const e = await meRes.json().catch(()=>({}));
+      throw new Error(`Profilo non recuperato (${meRes.status}): ${e?.error?.message||'rieffettua il login'}`);
     }
-    if(uris.length) await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({uris})});
-    sessionHistory.unshift({id:Date.now(),name:plName,date:new Date().toISOString(),tracks:generatedTracks,trackCount:uris.length});
+    const me = await meRes.json();
+
+    const plName = document.getElementById('playlistName').value || 'Spinning Session 🔥';
+    const plRes = await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`, {
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({name:plName, description:`Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`, public:false})
+    });
+    if (!plRes.ok) {
+      const e = await plRes.json().catch(()=>({}));
+      throw new Error(`Creazione playlist fallita (${plRes.status}): ${e?.error?.message||''}`);
+    }
+    const pl = await plRes.json();
+
+    const uris = [];
+    const notFound = [];
+    for (const t of generatedTracks) {
+      if (t.uri && t.uri.startsWith('spotify:track:')) { uris.push(t.uri); continue; }
+      try {
+        const q = encodeURIComponent(`${t.title} ${t.artist}`);
+        const sRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {headers:{Authorization:'Bearer '+token}});
+        const sData = await sRes.json();
+        const found = sData.tracks?.items?.[0];
+        if (found) { uris.push(found.uri); t.uri = found.uri; }
+        else notFound.push(t.title);
+      } catch(e) { notFound.push(t.title); }
+    }
+
+    if (!uris.length) throw new Error('Nessun brano trovato su Spotify.');
+
+    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({uris})
+    });
+    if (!addRes.ok) {
+      const e = await addRes.json().catch(()=>({}));
+      throw new Error(`Aggiunta brani fallita (${addRes.status}): ${e?.error?.message||''}`);
+    }
+
+    sessionHistory.unshift({id:Date.now(),name:plName,date:new Date().toISOString(),tracks:generatedTracks,trackCount:uris.length,spotifyUrl:pl.external_urls?.spotify||''});
     localStorage.setItem('spinflow_history',JSON.stringify(sessionHistory));
-    btn.textContent=`✓ Salvata! (${uris.length}/${generatedTracks.length})`;btn.style.background='#15803d';
-  }catch(e){btn.textContent='Errore.';btn.disabled=false;}
+
+    const skipped = notFound.length > 0 ? ` (saltati: ${notFound.join(', ')})` : '';
+    btn.textContent = `✅ Salvata! ${uris.length}/${generatedTracks.length} brani${skipped}`;
+    btn.style.background = '#15803d';
+    btn.style.color = '#fff';
+
+  } catch(err) {
+    console.error('[SpinFlow] savePlaylist error:', err);
+    btn.textContent = `❌ ${err.message}`;
+    btn.style.background = '#7f1d1d';
+    btn.style.color = '#fca5a5';
+    setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 7000);
+  }
+}
+
+// ---- VARIETY HELPERS ----
+
+function getSessionSeed() {
+  const adj = ['underground','underrated','deep cut','hidden gem','cult classic','indie','off-mainstream','overlooked','niche','raw','unconventional'];
+  const mood = ['ferocious','hypnotic','driving','relentless','punchy','massive','brutal','euphoric','dark','intense','electric'];
+  return adj[Math.floor(Math.random()*adj.length)] + ', ' + mood[Math.floor(Math.random()*mood.length)];
+}
+
+function getHistorySongs(currentTracks=[], limit=30) {
+  const songs = new Set();
+  for (const t of currentTracks) { if (t.title && t.artist) songs.add(`${t.title} - ${t.artist}`); }
+  const history = JSON.parse(localStorage.getItem('spinflow_history')||'[]');
+  for (const session of history.slice(0,5)) {
+    for (const t of (session.tracks||[])) {
+      if (t.title && t.artist) songs.add(`${t.title} - ${t.artist}`);
+      if (songs.size >= limit) break;
+    }
+    if (songs.size >= limit) break;
+  }
+  return [...songs];
+}
+
+// ---- GENERATE ----
+
+async function generate() {
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true; btn.textContent = '⏳ Generando...';
+  document.getElementById('resultArea').innerHTML = '<div class="loading-text">🎵 L\'AI sta costruendo la tua playlist...</div>';
+
+  const vibes = getSelected('vibeGroup');
+  const genres = getSelected('genreGroup');
+  const playlistName = document.getElementById('playlistName').value || 'Spinning Session';
+  const seed = getSessionSeed();
+  const toAvoid = getHistorySongs([], 30);
+  const avoidBlock = toAvoid.length > 0 ? `\nNON usare questi brani già usati di recente:\n${toAvoid.map(s=>`- ${s}`).join('\n')}` : '';
+  const libSongs = library.slice(0,8).map(t=>`"${t.title}" di ${t.artist} (BPM: ${t.bpm})`);
+  const libBlock = libSongs.length > 0 ? `\nIncludine alcune dalla libreria personale se si adattano:\n${libSongs.join('\n')}` : '';
+  const blocksDesc = sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type} | BPM ${b.bpm} | ${b.duration} min | energia ${b.energy}`).join('\n');
+
+  const systemPrompt = `Sei un DJ professionista specializzato in spinning indoor con conoscenza ENCICLOPEDICA di tutta la musica su Spotify: mainstream, underground, latina, elettronica, anni '80/'90/'00/'10/'20, internazionale e italiana.
+Suggerisci canzoni REALI ed ESISTENTI su Spotify. Varia MOLTO gli artisti (mai lo stesso due volte). Alterna epoche. Sii CORAGGIOSO: scegli anche canzoni meno ovvie, non solo le hit più famose.
+Vibe richiesto: ${vibes.join(', ')}. Generi: ${genres.join(', ')}. Flavour creativo di questa sessione: ${seed}.${avoidBlock}${libBlock}
+Rispondi SOLO con un array JSON valido, senza testo prima o dopo, senza backtick.`;
+
+  const userPrompt = `Crea una playlist di spinning per "${playlistName}".
+BLOCCHI:
+${blocksDesc}
+Per ogni blocco suggerisci UNA canzone. Restituisci ESATTAMENTE ${sessionBlocks.length} oggetti JSON:
+[{"title":"...","artist":"...","bpm":0,"phase":"tipo blocco","reason":"perché in max 10 parole"}]`;
+
+  try {
+    const res = await fetch('/.netlify/functions/generate', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        temperature: 1.15,
+        messages:[
+          {role:'system', content:systemPrompt},
+          {role:'user', content:userPrompt}
+        ]
+      })
+    });
+    if (!res.ok) throw new Error('Netlify Function error: ' + res.status);
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+    if (!raw) throw new Error('Risposta AI vuota');
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error('Formato non valido: ' + raw.substring(0,200));
+    const tracks = JSON.parse(match[0]);
+    if (!Array.isArray(tracks) || !tracks.length) throw new Error('Nessun brano nella risposta');
+
+    const enriched = tracks.map((t,i) => {
+      const block = sessionBlocks[i] || sessionBlocks[sessionBlocks.length-1];
+      const phase = PHASE_MAP[t.phase] || PHASES_DEF[2];
+      const inLib = library.find(l=>l.title?.toLowerCase()===t.title?.toLowerCase()&&l.artist?.toLowerCase()===t.artist?.toLowerCase());
+      return {...t, bpm:t.bpm||block.bpm, phase:t.phase||block.type, phaseData:phase, block, fromLibrary:!!inLib, uri:inLib?.uri||null, cover:inLib?.cover||null};
+    });
+
+    renderResult(enriched);
+
+  } catch(err) {
+    console.error('[SpinFlow] generate error:', err);
+    document.getElementById('resultArea').innerHTML = `<div class="status-err">❌ ${err.message}<br><small>Riprova — a volte basta un secondo tentativo.</small></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Genera playlist con AI';
+  }
+}
+
+// ---- RIGENERA SINGOLA ----
+
+async function regenerateSingle(index) {
+  const btn = document.querySelector(`[data-regen="${index}"]`);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  const track = generatedTracks[index];
+  const block = sessionBlocks[index] || sessionBlocks[sessionBlocks.length-1] || {};
+  const seed = getSessionSeed();
+  const alreadyIn = generatedTracks.filter((_,i)=>i!==index).map(t=>`"${t.title}" di ${t.artist}`);
+  const histAvoid = getHistorySongs(generatedTracks,20).filter(s=>!s.startsWith(track.title));
+  const allAvoid = [...alreadyIn,...histAvoid.slice(0,10)];
+
+  const systemPrompt = `Sei un DJ professionista con conoscenza enciclopedica di tutta la musica su Spotify. Suggerisci canzoni REALI ed ESISTENTI, anche poco conosciute. Flavour: ${seed}.`;
+  const userPrompt = `Suggerisci UNA SOLA canzone diversa da "${track.title}" di ${track.artist}. Tipo: "${block.type||'Sprint'}", BPM ~${track.bpm}, energia ${block.energy||'high'}, vibe: ${getSelected('vibeGroup').join(', ')}, genere: ${getSelected('genreGroup').join(', ')}. NON suggerire: ${allAvoid.slice(0,15).join(', ')}. Scegli qualcosa di INASPETTATO. Rispondi SOLO con JSON: {"title":"...","artist":"...","bpm":${track.bpm},"reason":"..."}`;
+
+  try {
+    const res = await fetch('/.netlify/functions/generate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({temperature:1.2, messages:[{role:'system',content:systemPrompt},{role:'user',content:userPrompt}]})
+    });
+    if (!res.ok) throw new Error('Errore Netlify: '+res.status);
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+    const match = raw.match(/\{[\s\S]*?\}/);
+    if (!match) throw new Error('Risposta AI non valida');
+    const newTrack = JSON.parse(match[0]);
+    if (!newTrack.title || !newTrack.artist) throw new Error('Dati incompleti');
+    generatedTracks[index] = {...newTrack, bpm:newTrack.bpm||track.bpm, phase:track.phase, phaseData:track.phaseData, block:track.block, uri:null, cover:null};
+    updateTrackRow(index);
+  } catch(err) {
+    console.error('[SpinFlow] regenerateSingle error:', err);
+    alert('Errore: '+err.message);
+    if (btn) { btn.textContent='↺'; btn.disabled=false; }
+  }
+}
+
+function updateTrackRow(index) {
+  const t = generatedTracks[index];
+  const row = document.getElementById(`track-row-${index}`);
+  if (!row) { renderResult(generatedTracks); return; }
+  const phase = t.phaseData || PHASES_DEF[0];
+  row.innerHTML = `
+    <span class="track-num">${index+1}</span>
+    <div class="track-cover-placeholder">🎵</div>
+    <div class="track-info">
+      <div class="track-title">${esc(t.title)}</div>
+      <div class="track-artist">${esc(t.artist)}</div>
+    </div>
+    <span class="phase-badge" style="background:${phase.bg};color:${phase.color};border:1px solid ${phase.border};">${t.block?.type||''}</span>
+    <span style="font-size:11px;color:#6C63FF;font-weight:600;min-width:52px;text-align:right;">${t.bpm} BPM</span>
+    <button class="ctrl-btn" data-regen="${index}" onclick="regenerateSingle(${index})" title="Rigenera" style="font-size:16px;width:28px;height:28px;color:#888;" onmouseover="this.style.color='#a89bff'" onmouseout="this.style.color='#888'">↺</button>
+    <button class="play-track-btn" onclick="playTrackBySearch('${esc(t.title)}','${esc(t.artist)}',${index})" title="Riproduci">▶</button>`;
+}
+
+function renderResult(tracks) {
+  if (!tracks || !tracks.length) return;
+  generatedTracks = tracks;
+  currentQueue = tracks.map(t=>({...t}));
+
+  let html = `<div class="card" style="margin-top:1.25rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px;">
+      <div class="card-label" style="margin-bottom:0;">🎵 Playlist — ${tracks.length} brani</div>
+      <button id="saveBtn" onclick="savePlaylist()" class="btn btn-green" style="font-size:13px;padding:8px 18px;">💚 Salva su Spotify</button>
+    </div>`;
+
+  tracks.forEach((t,i) => {
+    const phase = t.phaseData || PHASES_DEF[0];
+    const cover = t.cover ? `<img class="track-cover" src="${t.cover}" />` : `<div class="track-cover-placeholder">🎵</div>`;
+    html += `<div class="track-row" id="track-row-${i}">
+      <span class="track-num">${i+1}</span>
+      ${cover}
+      <div class="track-info">
+        <div class="track-title">${esc(t.title)}${t.fromLibrary?'<span class="from-library">★ libreria</span>':''}</div>
+        <div class="track-artist">${esc(t.artist)}</div>
+      </div>
+      <span class="phase-badge" style="background:${phase.bg};color:${phase.color};border:1px solid ${phase.border};">${t.block?.type||t.phase||''}</span>
+      <span style="font-size:11px;color:#6C63FF;font-weight:600;min-width:52px;text-align:right;">${t.bpm} BPM</span>
+      <button class="ctrl-btn" data-regen="${i}" onclick="regenerateSingle(${i})" title="Rigenera" style="font-size:16px;width:28px;height:28px;color:#888;" onmouseover="this.style.color='#a89bff'" onmouseout="this.style.color='#888'">↺</button>
+      <button class="play-track-btn" onclick="playTrackBySearch('${esc(t.title)}','${esc(t.artist)}',${i})" title="Riproduci">▶</button>
+    </div>`;
+  });
+
+  html += '</div>';
+  document.getElementById('resultArea').innerHTML = html;
+  currentQueueIndex = -1;
 }
 
 // ---- HISTORY ----
