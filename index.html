@@ -351,7 +351,7 @@ function startAuth() {
   const p = new URLSearchParams({
     response_type:'code', client_id:CLIENT_ID,
     scope:'playlist-modify-public playlist-modify-private user-read-private streaming user-read-playback-state user-modify-playback-state',
-    redirect_uri: REDIRECT_URI, state, access_type:'offline'
+    redirect_uri: REDIRECT_URI, state, show_dialog: 'true'
   });
   window.location.href = 'https://accounts.spotify.com/authorize?' + p;
 }
