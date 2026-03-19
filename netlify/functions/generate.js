@@ -4,6 +4,8 @@ exports.handler = async (event) => {
   }
   try {
     const body = JSON.parse(event.body);
+    const temperature = body.temperature !== undefined ? body.temperature : 1.1;
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -14,7 +16,7 @@ exports.handler = async (event) => {
         model: 'llama-3.3-70b-versatile',
         messages: body.messages,
         max_tokens: 1500,
-        temperature: 0.7
+        temperature: temperature
       })
     });
     const data = await response.json();
