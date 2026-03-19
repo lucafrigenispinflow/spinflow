@@ -1012,6 +1012,9 @@ async function searchTrackWithBpm(query, targetBpm, token) {
   } catch(e) { return null; }
 }
 
+<<<<<<< HEAD
+:
+=======
 // ---- SEARCH TRACK ----
 
 async function searchTrackWithBpm(query, targetBpm, token) {
@@ -1049,7 +1052,7 @@ async function savePlaylist() {
       body: JSON.stringify({
         name: plName,
         description: `Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`,
-        public: false
+        public: true
       })
     });
 
@@ -1111,7 +1114,13 @@ async function savePlaylist() {
     setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 8000);
   }
 }
+>>>>>>> 261e4aa356379ccb800ffb0bcebaddd61fc4f5ad
 
+<<<<<<< HEAD
+🗺️ POTENZIALI CLIENTI ITALIAONLINE — BERGAMO
+✂️ BARBIERI / PARRUCCHIERI
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità1Barbieri Zanchi dal 1959Via Pignolo, 19035 2191541104,9❌ Nessun sitoSito, social, ADV2Momento Barber StudioVia Silvio Spaventa, 64035 230251545,0Solo InstagramSito, indicizzazione3Barber KingVia Promessi Sposi, 19b351 773 63611745,0Solo InstagramSito, ADV4WEEHAB BARBER SHOPVia Pietro Paleocapa, 8351 254 1483904,9❌ Nessun sitoSito, social, ADV5Simo Barber ShopVia G.B. Moroni, 78035 063 09661694,6Solo InstagramSito, ADV Google6Italian concept BergamoVia Sant'Alessandro, 14035 074 50863244,5❌ Nessun sitoSito, social, ADV7Parrucchiere LinVia Borgo Palazzo, 78351 970 00002034,2Solo FacebookSito, ADV Meta
+=======
 // ---- VARIETY HELPERS ----
 
 function getSessionSeed() {
@@ -1293,8 +1302,27 @@ function renderHistory(){
   document.getElementById('historyEmpty').style.display='none';
   document.getElementById('historyList').innerHTML=sessionHistory.map(s=>`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-weight:600;">${s.name}</div><div style="font-size:12px;color:#555;">${new Date(s.date).toLocaleDateString('it-IT')}</div></div><div style="font-size:13px;color:#777;margin-bottom:10px;">${s.trackCount} brani su Spotify</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.tracks.slice(0,5).map(t=>{const p=PHASE_MAP[t.phase]||PHASES_DEF[2];return`<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:${p.bg};color:${p.color};border:1px solid ${p.border}">${t.title}</span>`;}).join('')}${s.tracks.length>5?`<span style="font-size:11px;color:#555;">+${s.tracks.length-5}</span>`:''}</div></div>`).join('');
 }
+>>>>>>> 261e4aa356379ccb800ffb0bcebaddd61fc4f5ad
 
-init();
-</script>
-</body>
-</html>
+🍕 FOOD & BEVERAGE
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità8Pizzeria Assaje BergamoLargo Porta S. Alessandro, 1035 2563832.1804,5❌ Nessun sitoSito urgente, ADV9Dolce PizzaVia Antonio Locatelli, 67035 2356714444,8Solo WhatsAppSito, ADV Google10Bar Broseta 47Via Broseta, 47a334 752 2843674,9Solo InstagramSito, ADV Meta11dim sum innLargo Porta Nuova, 6035 1990 6256634,9❌ Nessun sitoSito, social, ADV12Dumpling&SushiViale Papa Giovanni XXIII, 43035 427 74561064,9❌ Nessun sitoSito, indicizzazione13Sapority pasticceria SicilianaVia Pignolo, 13a035 2113782204,7❌ Nessun sitoSito, ADV, social14Dal Turco (kebab)Via Borgo Santa Caterina, 98c327 784 66661974,7❌ Nessun sitoSito, ADV Google
+
+🌸 ESTETICA / BENESSERE
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità15Nail AreaVia G. Camozzi, 134389 503 2334764,8Solo InstagramSito, ADV Meta16Gelateria CuoreVia F. Corridoni, 37035 3619221464,6Solo link breveSito, ADV Google
+
+🚗 AUTO / GOMME
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità17Autofficina FiorettiVia Borgo Palazzo, 150371 483 0106634,8❌ Nessun sitoSito, indicizzazione18Capra Luigi & C. Snc (gomme)Via Borgo Palazzo, 148035 294447774,5❌ Nessun sitoSito, indicizzazione
+
+🌺 FIORISTI
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità19Paolo FioriVia Broseta, 76335 101 2065774,5Solo FacebookSito, ADV Meta
+
+👗 ABBIGLIAMENTO
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità20Fumagalli città altaVia B. Colleoni, 15N035 060 3228324,6❌ Nessun sitoSito, social, ADV
+
+🎨 TATUAGGI
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità21Custom Tattoo BGVia S. Bernardino, 1/c329 164 7688495,0Solo InstagramSito, indicizzazione
+
+🧺 LAVANDERIE
+#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità22Lavanderia 33Via S. Giovanni Bosco, 33/D349 090 60601014,9❌ Nessun sitoSito, indicizzazione
+
+Vuoi che continui a cercare per arrivare a 100? Posso esplorare altre categorie (ristoranti etnici, fotografi, agenzie viaggi, negozi sport, centri massaggi, elettricisti, imbianchini, veterinari, etc.) e aggiungere i risultati a questa lista.ok fammi un file excel così scarico e chiamo da li o anche notepad , fatto 
