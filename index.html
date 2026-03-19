@@ -891,7 +891,7 @@ function renderGeneratedTracks(){
     const color=EX_COLORS[t.type]||'#888';
     const libEntry=library.find(l=>l.title===t.title&&l.artist===t.artist);
     const coverHtml=libEntry?.cover?`<img class="track-cover" src="${libEntry.cover}" />`:`<div class="track-cover-placeholder">🎵</div>`;
-    return `<div class="track-row">
+    return `<div class="track-row" id="trow-${i}">
       <button class="play-track-btn" id="ptb-${i}" onclick="playGeneratedTrack(${i})">▶</button>
       <span class="track-num">${i+1}</span>${coverHtml}
       <div class="track-info">
@@ -901,11 +901,12 @@ function renderGeneratedTracks(){
       <span class="phase-badge" style="background:#1a1a1a;color:${color};border:1px solid #2a2a2a;">${t.type||''}</span>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
         <div style="display:flex;align-items:center;gap:4px;">
-          <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:55px;">
+          <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:50px;">
           <span class="bpm-label" id="bpm-${i}">${t.bpm}</span>
         </div>
         ${t.actualBpm?`<span style="font-size:10px;color:#4ade80;">reale: ${t.actualBpm} bpm</span>`:''}
       </div>
+      <button id="regen-${i}" onclick="regenerateTrack(${i})" title="Rigenera questa canzone" style="width:28px;height:28px;border-radius:50%;border:1px solid #2a2a2a;background:#0f0f0f;color:#888;font-size:13px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#888'">↺</button>
     </div>`;
   }).join('');
   const saveBtn=`<button class="btn btn-green btn-full" style="margin-top:14px;" id="saveBtn" onclick="savePlaylist()">💚 Salva su Spotify</button>`;
@@ -921,6 +922,70 @@ async function playGeneratedTrack(i){
 }
 
 function updateBpm(i,val){generatedTracks[i].bpm=+val;document.getElementById('bpm-'+i).textContent=val;}
+
+async function regenerateTrack(i) {
+  const btn = document.getElementById('regen-'+i);
+  const t = generatedTracks[i];
+  btn.textContent = '⟳';
+  btn.style.color = '#6C63FF';
+  btn.disabled = true;
+
+  const vibes = getSelected('vibeGroup');
+  const genres = getSelected('genreGroup');
+  const prompt = `Sei un esperto DJ di spinning. Suggerisci UNA canzone DIVERSA da "${t.title}" di ${t.artist} per: tipo ${t.type}, BPM target ${t.bpm} (range ±5 o doppio/metà), energia ${t.energy||'medium'}, vibe ${vibes.join(',')||'energica'}, generi ${genres.join(',')||'pop'}. Rispondi SOLO JSON: {"title":"","artist":"","bpm":${t.bpm},"type":"${t.type}","energy":"${t.energy||'medium'}","fromLibrary":false}`;
+
+  try {
+    const res = await fetch('/.netlify/functions/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({messages:[{role:'user',content:prompt}]})
+    });
+    const data = await res.json();
+    const text = (data.choices?.[0]?.message?.content||'').replace(/\`\`\`json|\`\`\`/g,'').trim();
+    const newTrack = JSON.parse(text);
+    generatedTracks[i] = newTrack;
+    currentQueue[i] = {uri:null, title:newTrack.title, artist:newTrack.artist};
+    renderGeneratedTracks();
+  } catch(e) {
+    btn.textContent = '↺';
+    btn.style.color = '#f87171';
+    btn.disabled = false;
+    setTimeout(()=>{btn.style.color='#888';btn.textContent='↺';},2000);
+  }
+}
+
+async function regenTrack(i) {
+  const btn = document.getElementById('regen-'+i);
+  const row = document.getElementById('trow-'+i);
+  if(!btn||!row) return;
+  btn.textContent='⏳'; btn.disabled=true;
+  const t = generatedTracks[i];
+  const block = sessionBlocks[i] || sessionBlocks[sessionBlocks.length-1];
+  const vibes = getSelected('vibeGroup');
+  const genres = getSelected('genreGroup');
+  const energyDesc = {high:'alta energia (esplosiva, rock/EDM)', medium:'energia media (motivante, pop)', low:'bassa energia (emotiva, soul)'};
+  const usedTitles = generatedTracks.filter((_,j)=>j!==i).map(t=>`"${t.title}" di ${t.artist}`).join(', ');
+
+  const prompt = `Sei un DJ di spinning. Trovami UNA canzone diversa per questo blocco:
+- Tipo: ${t.type}, BPM target: ${t.bpm} (±5 o doppio/metà), energia: ${energyDesc[block.energy||'medium']}
+- Vibe: ${vibes.join(',')||'energica'}, genere: ${genres.join(',')||'pop'}
+- NON usare queste canzoni già in playlist: ${usedTitles}
+Rispondi SOLO JSON: {"title":"","artist":"","bpm":${t.bpm},"type":"${t.type}","fromLibrary":false}`;
+
+  try {
+    const res = await fetch('/.netlify/functions/generate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({messages:[{role:'user',content:prompt}]})
+    });
+    const data = await res.json();
+    const text = (data.choices?.[0]?.message?.content||'').replace(/\`\`\`json|\`\`\`/g,'').trim();
+    const newTrack = JSON.parse(text);
+    generatedTracks[i] = {...newTrack, bpm: newTrack.bpm||t.bpm};
+    renderGeneratedTracks();
+  } catch(e) {
+    btn.textContent='↺'; btn.disabled=false;
+    setPlayerStatus('Errore rigenerazione');
+  }
+}
 
 async function searchTrackWithBpm(query, targetBpm, token) {
   const range = 10;
@@ -950,9 +1015,11 @@ async function searchTrackWithBpm(query, targetBpm, token) {
 async function savePlaylist(){
   const btn=document.getElementById('saveBtn'); btn.disabled=true; btn.textContent='Salvataggio...';
   const token=await getValidToken();
-  if(!token){btn.textContent='Token scaduto';btn.disabled=false;return;}
+  if(!token){btn.textContent='Token scaduto — rieffettua il login';btn.disabled=false;return;}
   try{
-    const me=await (await fetch('https://api.spotify.com/v1/me',{headers:{Authorization:'Bearer '+token}})).json();
+    const meRes=await fetch('https://api.spotify.com/v1/me',{headers:{Authorization:'Bearer '+token}});
+    if(!meRes.ok){localStorage.removeItem('sp_access_token');btn.textContent='Sessione scaduta — ricarica e rifai login';btn.disabled=false;return;}
+    const me=await meRes.json();
     const plName=document.getElementById('playlistName').value||'Spinning Session';
     const pl=await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:plName,description:'Creata con SpinFlow',public:false})})).json();
     const uris=[];
