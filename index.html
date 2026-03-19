@@ -838,183 +838,6 @@ function editLibraryItem(i){
   document.getElementById('modalOverlay').classList.add('open');
 }
 
-// ---- GENERATE ----
-async function generate(){
-  const vibes=getSelected('vibeGroup'),genres=getSelected('genreGroup');
-  if(!sessionBlocks.length){document.getElementById('resultArea').innerHTML='<div class="status-err">Aggiungi almeno un blocco alla sessione!</div>';return;}
-
-  const totalDur=sessionBlocks.reduce((s,b)=>s+b.duration,0);
-  const libCtx=library.length>0?`\nHo in libreria questi brani, usali dove BPM e tipo si adattano:\n${library.map(t=>`- "${t.title}" di ${t.artist} (${t.bpm}BPM, ${t.exercises.join('/')})`).join('\n')}`:'';
-
-  const energyDesc={high:'alta energia (esplosiva, adrenalinica, rock/EDM duro)',medium:'energia media (ritmo costante, motivante, pop/hip-hop)',low:'bassa energia (emotiva, soft, soul/ambient/acustica)'};
-  const blocksDesc=sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type}, BPM target ${b.bpm} (range ±5 o doppio/metà), durata ${b.duration} min, energia: ${energyDesc[b.energy||'medium']}`).join('\n');
-
-  document.getElementById('resultArea').innerHTML='<div class="loading-text">Generando playlist... ✨</div>';
-  document.getElementById('generateBtn').disabled=true;
-
-  const token = await getValidToken();
-  if(!token){document.getElementById('resultArea').innerHTML='<div class="status-err">Token scaduto — ricarica la pagina</div>';document.getElementById('generateBtn').disabled=false;return;}
-
-  const prompt=`Sei un esperto DJ di spinning/indoor cycling. Crea una playlist per questa sessione di ${totalDur} minuti con vibe ${vibes.join(',')||'energica'} e generi ${genres.join(',')||'pop'}.
-
-La sessione è strutturata così:
-${blocksDesc}
-
-REGOLA BPM IMPORTANTE: Nel ciclismo indoor i BPM delle gambe (RPM) possono corrispondere sia al BPM diretto della canzone CHE alla metà o al doppio. Quindi per ogni blocco accetta canzoni con BPM nel range target ±5, OPPURE al doppio del target ±5, OPPURE alla metà del target ±5.
-Esempio: target 90 BPM → accettabili 85-95 BPM oppure 175-185 BPM
-Esempio: target 160 BPM → accettabili 155-165 BPM oppure 78-82 BPM
-
-Per ogni blocco trova 1 canzone REALE esistente su Spotify che si adatti meglio al tipo di esercizio e al BPM (considera anche doppio/metà).${libCtx}
-
-Rispondi SOLO JSON valido senza niente fuori:
-{"tracks":[{"title":"","artist":"","bpm":140,"type":"Warm-up","duration":5,"fromLibrary":false}]}`;
-
-  try{
-    const res=await fetch('/.netlify/functions/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}]})});
-    const data=await res.json();
-    const text=(data.choices?.[0]?.message?.content||'').replace(/```json|```/g,'').trim();
-    generatedTracks=JSON.parse(text).tracks;
-    currentQueue=generatedTracks.map(t=>({uri:null,title:t.title,artist:t.artist}));
-    library.forEach(l=>{if(generatedTracks.find(t=>t.title===l.title&&t.artist===l.artist))l.usedCount=(l.usedCount||0)+1;});
-    localStorage.setItem('spinflow_library',JSON.stringify(library));
-    renderGeneratedTracks();
-    renderSessionBlocks();
-  }catch(e){
-    document.getElementById('resultArea').innerHTML='<div class="status-err">Errore nella generazione. Riprova!</div>';
-  }
-  document.getElementById('generateBtn').disabled=false;
-}
-
-function renderGeneratedTracks(){
-  const totalMin=sessionBlocks.reduce((s,b)=>s+b.duration,0);
-  const rows=generatedTracks.map((t,i)=>{
-    const color=EX_COLORS[t.type]||'#888';
-    const libEntry=library.find(l=>l.title===t.title&&l.artist===t.artist);
-    const coverHtml=libEntry?.cover?`<img class="track-cover" src="${libEntry.cover}" />`:`<div class="track-cover-placeholder">🎵</div>`;
-    return `<div class="track-row" id="trow-${i}">
-      <button class="play-track-btn" id="ptb-${i}" onclick="playGeneratedTrack(${i})">▶</button>
-      <span class="track-num">${i+1}</span>${coverHtml}
-      <div class="track-info">
-        <div class="track-title">${t.title}${t.fromLibrary?'<span class="from-library">★</span>':''}</div>
-        <div class="track-artist">${t.artist}</div>
-      </div>
-      <span class="phase-badge" style="background:#1a1a1a;color:${color};border:1px solid #2a2a2a;">${t.type||''}</span>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
-        <div style="display:flex;align-items:center;gap:4px;">
-          <input type="range" min="${Math.max(60,t.bpm-30)}" max="${Math.min(200,t.bpm+30)}" value="${t.bpm}" step="1" oninput="updateBpm(${i},this.value)" style="width:50px;">
-          <span class="bpm-label" id="bpm-${i}">${t.bpm}</span>
-        </div>
-        ${t.actualBpm?`<span style="font-size:10px;color:#4ade80;">reale: ${t.actualBpm} bpm</span>`:''}
-      </div>
-      <button id="regen-${i}" onclick="regenerateTrack(${i})" title="Rigenera questa canzone" style="width:28px;height:28px;border-radius:50%;border:1px solid #2a2a2a;background:#0f0f0f;color:#888;font-size:13px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.borderColor='#6C63FF';this.style.color='#a89bff'" onmouseout="this.style.borderColor='#2a2a2a';this.style.color='#888'">↺</button>
-    </div>`;
-  }).join('');
-  const saveBtn=`<button class="btn btn-green btn-full" style="margin-top:14px;" id="saveBtn" onclick="savePlaylist()">💚 Salva su Spotify</button>`;
-  document.getElementById('resultArea').innerHTML=`<div class="card" style="margin-top:1rem;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;"><div style="font-size:15px;font-weight:700;">${generatedTracks.length} brani · ${totalMin} min</div><div style="font-size:12px;color:#555;">${generatedTracks.filter(t=>t.fromLibrary).length} dalla libreria</div></div>${rows}${saveBtn}</div>`;
-}
-
-async function playGeneratedTrack(i){
-  currentQueueIndex=i;
-  const t=generatedTracks[i];
-  updatePlayerUI(t.title,t.artist,library.find(l=>l.title===t.title)?.cover||null);
-  if(currentQueue[i]?.uri) await playTrackUri(currentQueue[i].uri,i);
-  else await playTrackBySearch(t.title,t.artist,i);
-}
-
-function updateBpm(i,val){generatedTracks[i].bpm=+val;document.getElementById('bpm-'+i).textContent=val;}
-
-async function regenerateTrack(i) {
-  const btn = document.getElementById('regen-'+i);
-  const t = generatedTracks[i];
-  btn.textContent = '⟳';
-  btn.style.color = '#6C63FF';
-  btn.disabled = true;
-
-  const vibes = getSelected('vibeGroup');
-  const genres = getSelected('genreGroup');
-  const prompt = `Sei un esperto DJ di spinning. Suggerisci UNA canzone DIVERSA da "${t.title}" di ${t.artist} per: tipo ${t.type}, BPM target ${t.bpm} (range ±5 o doppio/metà), energia ${t.energy||'medium'}, vibe ${vibes.join(',')||'energica'}, generi ${genres.join(',')||'pop'}. Rispondi SOLO JSON: {"title":"","artist":"","bpm":${t.bpm},"type":"${t.type}","energy":"${t.energy||'medium'}","fromLibrary":false}`;
-
-  try {
-    const res = await fetch('/.netlify/functions/generate', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({messages:[{role:'user',content:prompt}]})
-    });
-    const data = await res.json();
-    const text = (data.choices?.[0]?.message?.content||'').replace(/\`\`\`json|\`\`\`/g,'').trim();
-    const newTrack = JSON.parse(text);
-    generatedTracks[i] = newTrack;
-    currentQueue[i] = {uri:null, title:newTrack.title, artist:newTrack.artist};
-    renderGeneratedTracks();
-  } catch(e) {
-    btn.textContent = '↺';
-    btn.style.color = '#f87171';
-    btn.disabled = false;
-    setTimeout(()=>{btn.style.color='#888';btn.textContent='↺';},2000);
-  }
-}
-
-async function regenTrack(i) {
-  const btn = document.getElementById('regen-'+i);
-  const row = document.getElementById('trow-'+i);
-  if(!btn||!row) return;
-  btn.textContent='⏳'; btn.disabled=true;
-  const t = generatedTracks[i];
-  const block = sessionBlocks[i] || sessionBlocks[sessionBlocks.length-1];
-  const vibes = getSelected('vibeGroup');
-  const genres = getSelected('genreGroup');
-  const energyDesc = {high:'alta energia (esplosiva, rock/EDM)', medium:'energia media (motivante, pop)', low:'bassa energia (emotiva, soul)'};
-  const usedTitles = generatedTracks.filter((_,j)=>j!==i).map(t=>`"${t.title}" di ${t.artist}`).join(', ');
-
-  const prompt = `Sei un DJ di spinning. Trovami UNA canzone diversa per questo blocco:
-- Tipo: ${t.type}, BPM target: ${t.bpm} (±5 o doppio/metà), energia: ${energyDesc[block.energy||'medium']}
-- Vibe: ${vibes.join(',')||'energica'}, genere: ${genres.join(',')||'pop'}
-- NON usare queste canzoni già in playlist: ${usedTitles}
-Rispondi SOLO JSON: {"title":"","artist":"","bpm":${t.bpm},"type":"${t.type}","fromLibrary":false}`;
-
-  try {
-    const res = await fetch('/.netlify/functions/generate', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({messages:[{role:'user',content:prompt}]})
-    });
-    const data = await res.json();
-    const text = (data.choices?.[0]?.message?.content||'').replace(/\`\`\`json|\`\`\`/g,'').trim();
-    const newTrack = JSON.parse(text);
-    generatedTracks[i] = {...newTrack, bpm: newTrack.bpm||t.bpm};
-    renderGeneratedTracks();
-  } catch(e) {
-    btn.textContent='↺'; btn.disabled=false;
-    setPlayerStatus('Errore rigenerazione');
-  }
-}
-
-async function searchTrackWithBpm(query, targetBpm, token) {
-  const range = 10;
-  const halfBpm = Math.round(targetBpm / 2);
-  const doubleBpm = targetBpm * 2;
-  try {
-    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`, {headers:{Authorization:'Bearer '+token}});
-    const data = await res.json();
-    const tracks = data.tracks?.items || [];
-    if (!tracks.length) return null;
-    const ids = tracks.map(t=>t.id).join(',');
-    const featRes = await fetch(`https://api.spotify.com/v1/audio-features?ids=${ids}`, {headers:{Authorization:'Bearer '+token}});
-    const featData = await featRes.json();
-    const features = featData.audio_features || [];
-    let best = null, bestDiff = 999;
-    tracks.forEach((track, i) => {
-      const feat = features[i];
-      if (!feat) return;
-      const bpm = feat.tempo;
-      const diff = Math.min(Math.abs(bpm-targetBpm), Math.abs(bpm-halfBpm), Math.abs(bpm-doubleBpm));
-      if (diff < bestDiff) { bestDiff = diff; best = {track, bpm: Math.round(bpm), diff}; }
-    });
-    return best;
-  } catch(e) { return null; }
-}
-
-<<<<<<< HEAD
-:
-=======
 // ---- SEARCH TRACK ----
 
 async function searchTrackWithBpm(query, targetBpm, token) {
@@ -1114,13 +937,7 @@ async function savePlaylist() {
     setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 8000);
   }
 }
->>>>>>> 261e4aa356379ccb800ffb0bcebaddd61fc4f5ad
 
-<<<<<<< HEAD
-🗺️ POTENZIALI CLIENTI ITALIAONLINE — BERGAMO
-✂️ BARBIERI / PARRUCCHIERI
-#NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità1Barbieri Zanchi dal 1959Via Pignolo, 19035 2191541104,9❌ Nessun sitoSito, social, ADV2Momento Barber StudioVia Silvio Spaventa, 64035 230251545,0Solo InstagramSito, indicizzazione3Barber KingVia Promessi Sposi, 19b351 773 63611745,0Solo InstagramSito, ADV4WEEHAB BARBER SHOPVia Pietro Paleocapa, 8351 254 1483904,9❌ Nessun sitoSito, social, ADV5Simo Barber ShopVia G.B. Moroni, 78035 063 09661694,6Solo InstagramSito, ADV Google6Italian concept BergamoVia Sant'Alessandro, 14035 074 50863244,5❌ Nessun sitoSito, social, ADV7Parrucchiere LinVia Borgo Palazzo, 78351 970 00002034,2Solo FacebookSito, ADV Meta
-=======
 // ---- VARIETY HELPERS ----
 
 function getSessionSeed() {
@@ -1303,4 +1120,7 @@ function renderHistory(){
   document.getElementById('historyList').innerHTML=sessionHistory.map(s=>`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="font-weight:600;">${s.name}</div><div style="font-size:12px;color:#555;">${new Date(s.date).toLocaleDateString('it-IT')}</div></div><div style="font-size:13px;color:#777;margin-bottom:10px;">${s.trackCount} brani su Spotify</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${s.tracks.slice(0,5).map(t=>{const p=PHASE_MAP[t.phase]||PHASES_DEF[2];return`<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:${p.bg};color:${p.color};border:1px solid ${p.border}">${t.title}</span>`;}).join('')}${s.tracks.length>5?`<span style="font-size:11px;color:#555;">+${s.tracks.length-5}</span>`:''}</div></div>`).join('');
 }
 
-
+init();
+</script>
+</body>
+</html>
