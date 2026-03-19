@@ -351,7 +351,7 @@ function startAuth() {
   const p = new URLSearchParams({
     response_type:'code', client_id:CLIENT_ID,
     scope:'playlist-modify-public playlist-modify-private user-read-private streaming user-read-playback-state user-modify-playback-state',
-    redirect_uri: REDIRECT_URI, state, access_type:'offline'
+    redirect_uri: REDIRECT_URI, state, show_dialog: true
   });
   window.location.href = 'https://accounts.spotify.com/authorize?' + p;
 }
@@ -1325,4 +1325,4 @@ function renderHistory(){
 🧺 LAVANDERIE
 #NomeIndirizzoTelefonoRec.⭐Presenza digitaleOpportunità22Lavanderia 33Via S. Giovanni Bosco, 33/D349 090 60601014,9❌ Nessun sitoSito, indicizzazione
 
-Vuoi che continui a cercare per arrivare a 100? Posso esplorare altre categorie (ristoranti etnici, fotografi, agenzie viaggi, negozi sport, centri massaggi, elettricisti, imbianchini, veterinari, etc.) e aggiungere i risultati a questa lista.ok fammi un file excel così scarico e chiamo da li o anche notepad , fatto 
+Vuoi che continui a cercare per arrivare a 100? Posso esplorare altre categorie (ristoranti etnici, fotografi, agenzie viaggi, negozi sport, centri massaggi, elettricisti, imbianchini, veterinari, etc.) e aggiungere i risultati a questa lista.ok fammi un file excel così scarico e chiamo da li o anche notepad , fatto
