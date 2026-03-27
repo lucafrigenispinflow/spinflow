@@ -889,6 +889,25 @@ async function enrichTracksWithSpotify(tracks, token) {
 
 // ---- SAVE PLAYLIST ----
 
+// ============================================================
+// FIX savePlaylist — SOSTITUISCI nel tuo index.html
+// 
+// CERCA nel file:    async function savePlaylist() {
+// E SOSTITUISCI TUTTA la funzione fino alla } di chiusura
+// (circa da riga 1000 a riga 1050 nel tuo file)
+//
+// IL BUG PRINCIPALE:
+// Il codice usa "POST /me/playlists" che NON è un endpoint valido.
+// L'endpoint corretto è "POST /users/{userId}/playlists".
+// Per questo la playlist si crea (a volte) ma vuota, o dà 403.
+//
+// ALTRI FIX:
+// - Aggiunto Step 1: GET /me per ottenere lo userId
+// - Aggiunto ritardo tra le chiamate per evitare rate limit
+// - Aggiunto refresh token prima di aggiungere brani
+// - Logging dettagliato in console per debug
+// ============================================================
+
 async function savePlaylist() {
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
@@ -896,7 +915,7 @@ async function savePlaylist() {
   btn.style.background = '';
   btn.style.color = '';
 
-  const token = await getValidToken();
+  let token = await getValidToken();
   if (!token) {
     btn.textContent = '❌ Token scaduto — fai logout e riaccedi';
     btn.disabled = false;
@@ -904,77 +923,184 @@ async function savePlaylist() {
   }
 
   try {
-    // Usa /me/playlists — non richiede userId, meno restrittivo
+    // ====== STEP 1: Ottieni lo userId (OBBLIGATORIO per creare playlist) ======
+    const meRes = await fetch('https://api.spotify.com/v1/me', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!meRes.ok) throw new Error('Impossibile ottenere profilo utente');
+    const meData = await meRes.json();
+    const userId = meData.id;
+    console.log('[SpinFlow] userId:', userId);
+
+    // ====== STEP 2: Crea la playlist con l'endpoint CORRETTO ======
+    // BUG FIX: era "POST /me/playlists" → ora "POST /users/{userId}/playlists"
     const plName = document.getElementById('playlistName').value || 'Spinning Session 🔥';
-    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
+    
+    const plRes = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
       method: 'POST',
-      headers: {Authorization:'Bearer '+token, 'Content-Type':'application/json'},
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         name: plName,
         description: `Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`,
-        public: true
+        public: false  // false = privata, meno restrizioni
       })
     });
 
     if (!plRes.ok) {
-      const e = await plRes.json().catch(()=>({}));
-      // Se ancora 403, mostra messaggio guidato
+      const e = await plRes.json().catch(() => ({}));
+      console.error('[SpinFlow] Errore creazione playlist:', plRes.status, e);
       if (plRes.status === 403) {
         btn.textContent = '⚠️ Aggiungi il tuo account nella Spotify Dashboard';
         btn.style.background = '#92400e';
         btn.style.color = '#fde68a';
         btn.disabled = false;
-        document.getElementById('spotifyDashboardMsg').style.display = 'block';
+        const dashMsg = document.getElementById('spotifyDashboardMsg');
+        if (dashMsg) dashMsg.style.display = 'block';
         return;
       }
-      throw new Error(`Creazione playlist fallita (${plRes.status}): ${e?.error?.message||''}`);
+      throw new Error(`Creazione playlist fallita (${plRes.status}): ${e?.error?.message || ''}`);
     }
     const pl = await plRes.json();
+    console.log('[SpinFlow] Playlist creata:', pl.id, pl.name);
 
-    // Cerca URI per ogni brano
+    // ====== STEP 3: Cerca gli URI reali di ogni brano su Spotify ======
+    btn.textContent = '🔍 Cercando brani su Spotify...';
+    
+    // Rinfresca il token (la ricerca AI può aver preso tempo)
+    token = await getValidToken();
+    
     const uris = [];
     const notFound = [];
-    for (const t of generatedTracks) {
-      if (t.uri && t.uri.startsWith('spotify:track:')) { uris.push(t.uri); continue; }
+
+    for (let i = 0; i < generatedTracks.length; i++) {
+      const t = generatedTracks[i];
+      btn.textContent = `🔍 Brano ${i + 1}/${generatedTracks.length}...`;
+
+      // Se abbiamo già un URI valido, usiamolo
+      if (t.uri && t.uri.startsWith('spotify:track:')) {
+        uris.push(t.uri);
+        console.log(`[SpinFlow] Brano ${i + 1}: URI già presente → ${t.uri}`);
+        continue;
+      }
+
+      // Altrimenti cerchiamo su Spotify
       try {
-        const q = encodeURIComponent(`${t.title} ${t.artist}`);
-        const sRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {headers:{Authorization:'Bearer '+token}});
+        // Piccolo ritardo per evitare rate limiting di Spotify
+        if (i > 0) await new Promise(r => setTimeout(r, 200));
+        
+        const q = encodeURIComponent(`track:${t.title} artist:${t.artist}`);
+        const sRes = await fetch(
+          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=3`,
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        
+        if (sRes.status === 429) {
+          // Rate limited — aspetta e riprova
+          const wait = parseInt(sRes.headers.get('Retry-After') || '2') * 1000;
+          console.warn(`[SpinFlow] Rate limited, aspetto ${wait}ms...`);
+          await new Promise(r => setTimeout(r, wait));
+          // Riprova
+          i--;
+          continue;
+        }
+        
         const sData = await sRes.json();
         const found = sData.tracks?.items?.[0];
-        if (found) { uris.push(found.uri); t.uri = found.uri; }
-        else notFound.push(t.title);
-      } catch(e) { notFound.push(t.title); }
+
+        if (found) {
+          uris.push(found.uri);
+          t.uri = found.uri;
+          console.log(`[SpinFlow] Brano ${i + 1}: "${t.title}" → ${found.uri}`);
+        } else {
+          // Prova ricerca più generica (senza filtri track:/artist:)
+          const q2 = encodeURIComponent(`${t.title} ${t.artist}`);
+          const sRes2 = await fetch(
+            `https://api.spotify.com/v1/search?q=${q2}&type=track&limit=1`,
+            { headers: { Authorization: 'Bearer ' + token } }
+          );
+          const sData2 = await sRes2.json();
+          const found2 = sData2.tracks?.items?.[0];
+          if (found2) {
+            uris.push(found2.uri);
+            t.uri = found2.uri;
+            console.log(`[SpinFlow] Brano ${i + 1}: "${t.title}" → ${found2.uri} (ricerca generica)`);
+          } else {
+            notFound.push(t.title);
+            console.warn(`[SpinFlow] Brano ${i + 1}: "${t.title}" di ${t.artist} NON TROVATO`);
+          }
+        }
+      } catch (e) {
+        notFound.push(t.title);
+        console.error(`[SpinFlow] Errore ricerca brano ${i + 1}:`, e);
+      }
     }
 
-    if (!uris.length) throw new Error('Nessun brano trovato su Spotify.');
+    console.log(`[SpinFlow] URI trovati: ${uris.length}/${generatedTracks.length}`, uris);
 
-    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
-      method: 'POST',
-      headers: {Authorization:'Bearer '+token, 'Content-Type':'application/json'},
-      body: JSON.stringify({uris})
+    if (!uris.length) {
+      throw new Error('Nessun brano trovato su Spotify. Riprova a generare.');
+    }
+
+    // ====== STEP 4: Aggiungi i brani alla playlist ======
+    btn.textContent = `📝 Aggiungendo ${uris.length} brani...`;
+    
+    // Rinfresca il token un'altra volta per sicurezza
+    token = await getValidToken();
+
+    // Spotify accetta max 100 URI per volta, dividiamo in batch
+    for (let batch = 0; batch < uris.length; batch += 100) {
+      const chunk = uris.slice(batch, batch + 100);
+      const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ uris: chunk })
+      });
+
+      if (!addRes.ok) {
+        const e = await addRes.json().catch(() => ({}));
+        console.error('[SpinFlow] Errore aggiunta brani:', addRes.status, e);
+        throw new Error(`Aggiunta brani fallita (${addRes.status}): ${e?.error?.message || ''}`);
+      }
+      console.log(`[SpinFlow] Batch ${Math.floor(batch/100)+1}: ${chunk.length} brani aggiunti`);
+    }
+
+    // ====== STEP 5: Salva nello storico ======
+    sessionHistory.unshift({
+      id: Date.now(),
+      name: plName,
+      date: new Date().toISOString(),
+      tracks: generatedTracks,
+      trackCount: uris.length,
+      spotifyUrl: pl.external_urls?.spotify || ''
     });
-    if (!addRes.ok) {
-      const e = await addRes.json().catch(()=>({}));
-      throw new Error(`Aggiunta brani fallita (${addRes.status}): ${e?.error?.message||''}`);
-    }
+    localStorage.setItem('spinflow_history', JSON.stringify(sessionHistory));
 
-    sessionHistory.unshift({id:Date.now(),name:plName,date:new Date().toISOString(),tracks:generatedTracks,trackCount:uris.length,spotifyUrl:pl.external_urls?.spotify||''});
-    localStorage.setItem('spinflow_history',JSON.stringify(sessionHistory));
-
-    const skipped = notFound.length > 0 ? ` (saltati: ${notFound.join(', ')})` : '';
-    btn.textContent = `✅ Salvata! ${uris.length}/${generatedTracks.length} brani${skipped}`;
+    // ====== SUCCESSO! ======
+    const skipped = notFound.length > 0 ? ` (${notFound.length} non trovati)` : '';
+    btn.textContent = `✅ Salvata! ${uris.length} brani su Spotify${skipped}`;
     btn.style.background = '#15803d';
     btn.style.color = '#fff';
+    console.log('[SpinFlow] ✅ Playlist salvata con successo!', pl.external_urls?.spotify);
 
-  } catch(err) {
+  } catch (err) {
     console.error('[SpinFlow] savePlaylist error:', err);
     btn.textContent = `❌ ${err.message}`;
     btn.style.background = '#7f1d1d';
     btn.style.color = '#fca5a5';
-    setTimeout(()=>{ btn.textContent='💚 Salva su Spotify'; btn.style.background=''; btn.style.color=''; btn.disabled=false; }, 8000);
+    setTimeout(() => {
+      btn.textContent = '💚 Salva su Spotify';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.disabled = false;
+    }, 8000);
   }
 }
-
 // ---- VARIETY HELPERS ----
 
 function getSessionSeed() {
