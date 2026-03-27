@@ -842,13 +842,50 @@ function editLibraryItem(i){
 
 async function searchTrackWithBpm(query, targetBpm, token) {
   try {
-    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`, {headers:{Authorization:'Bearer '+token}});
+    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`, {headers:{Authorization:'Bearer '+token}});
     const data = await res.json();
     const tracks = data.tracks?.items || [];
     if (!tracks.length) return null;
-    return { track: tracks[0], bpm: targetBpm, diff: 0 };
+    try {
+      const ids = tracks.map(t=>t.id).join(',');
+      const featRes = await fetch(`https://api.spotify.com/v1/audio-features?ids=${ids}`, {headers:{Authorization:'Bearer '+token}});
+      const featData = await featRes.json();
+      const features = featData.audio_features || [];
+      let best = null, bestDiff = 999;
+      tracks.forEach((track, i) => {
+        const feat = features[i];
+        if (!feat || !feat.tempo) return;
+        const bpm = feat.tempo;
+        const diff = Math.min(Math.abs(bpm-targetBpm), Math.abs(bpm-targetBpm/2), Math.abs(bpm-targetBpm*2));
+        if (diff < bestDiff) { bestDiff = diff; best = {track, realBpm: Math.round(bpm), diff}; }
+      });
+      if (best) return best;
+    } catch(e) {}
+    return { track: tracks[0], realBpm: null, diff: 999 };
   } catch(e) { return null; }
 }
+
+async function enrichTracksWithSpotify(tracks, token) {
+  if (!token) return tracks;
+  const enriched = [...tracks];
+  for (let i = 0; i < enriched.length; i++) {
+    const t = enriched[i];
+    if (t.uri && t.realBpm) continue;
+    const result = await searchTrackWithBpm(`${t.title} ${t.artist}`, t.bpm, token);
+    if (result) {
+      enriched[i] = {
+        ...t,
+        uri: result.track.uri,
+        cover: t.cover || result.track.album?.images?.[0]?.url || null,
+        spotifyId: result.track.id,
+        realBpm: result.realBpm || t.bpm,
+        bpmSource: result.realBpm ? 'spotify' : 'ai'
+      };
+    }
+  }
+  return enriched;
+}
+
 
 // ---- SAVE PLAYLIST ----
 
@@ -977,16 +1014,23 @@ async function generate() {
   const libBlock = libSongs.length > 0 ? `\nIncludine alcune dalla libreria personale se si adattano:\n${libSongs.join('\n')}` : '';
   const blocksDesc = sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type} | BPM ${b.bpm} | ${b.duration} min | energia ${b.energy}`).join('\n');
 
-  const systemPrompt = `Sei un DJ professionista specializzato in spinning indoor con conoscenza ENCICLOPEDICA di tutta la musica su Spotify: mainstream, underground, latina, elettronica, anni '80/'90/'00/'10/'20, internazionale e italiana.
-Suggerisci canzoni REALI ed ESISTENTI su Spotify. Varia MOLTO gli artisti (mai lo stesso due volte). Alterna epoche. Sii CORAGGIOSO: scegli anche canzoni meno ovvie, non solo le hit più famose.
-Vibe: ${vibes.join(', ')}. Generi: ${genres.join(', ')}. Flavour di questa sessione: ${seed}.${avoidBlock}${libBlock}
+  const systemPrompt = `Sei un DJ professionista specializzato in spinning/indoor cycling con accesso ILLIMITATO a tutta la musica disponibile su Spotify globalmente: hit mainstream, underground, indie, latina, afrobeat, elettronica, funk, soul, anni 70/80/90/2000/2010/2020/2024, musica internazionale e italiana, artisti famosi e artisti di nicchia.
+REGOLE FONDAMENTALI:
+- Suggerisci SOLO canzoni REALI ed ESISTENTI su Spotify (verificate)
+- Varia MOLTISSIMO: artisti diversi, epoche diverse, paesi diversi — mai lo stesso artista due volte
+- Sii CORAGGIOSO: esplora generi incrociati, versioni live, remix, B-side, colonne sonore
+- Ogni canzone deve essere COERENTE con il tipo di blocco (energia, tipo esercizio, BPM richiesto)
+- Per il BPM: nel cycling indoor puoi usare il BPM diretto, il doppio, o la metà del target
+- Vibe: ${vibes.join(', ')}. Generi preferiti: ${genres.join(', ')}. Flavour sessione: ${seed}.${avoidBlock}${libBlock}
 Rispondi SOLO con un array JSON valido, senza testo prima o dopo, senza backtick.`;
 
-  const userPrompt = `Crea una playlist di spinning per "${playlistName}".
-BLOCCHI:
-${blocksDesc}
-Per ogni blocco suggerisci UNA canzone. Restituisci ESATTAMENTE ${sessionBlocks.length} oggetti JSON:
-[{"title":"...","artist":"...","bpm":0,"phase":"tipo blocco","reason":"perché in max 10 parole"}]`;
+  const energyMap = {high:'ESPLOSIVA — brano che spinge al massimo, ritmo incalzante', medium:'SOSTENUTA — brano motivante con groove costante', low:'RECOVERY — brano più morbido, permette recupero'};
+  const userPrompt = `Crea la playlist di spinning per "${playlistName}". Ogni canzone deve essere PERFETTA per quel blocco specifico.
+STRUTTURA SESSIONE:
+${sessionBlocks.map((b,i)=>`Blocco ${i+1}: ${b.type} | BPM target: ${b.bpm} (accetta anche ${Math.round(b.bpm/2)} o ${b.bpm*2}) | Durata: ${b.duration} min | Energia: ${energyMap[b.energy||'medium']}`).join('\n')}
+
+Restituisci ESATTAMENTE ${sessionBlocks.length} oggetti JSON, uno per blocco nell'ordine corretto:
+[{"title":"...","artist":"...","bpm":0,"phase":"tipo blocco","energy":"high|medium|low","reason":"perché adatta in max 8 parole"}]`;
 
   try {
     const res = await fetch('/.netlify/functions/generate', {
@@ -1002,14 +1046,27 @@ Per ogni blocco suggerisci UNA canzone. Restituisci ESATTAMENTE ${sessionBlocks.
     const tracks = JSON.parse(match[0]);
     if (!Array.isArray(tracks) || !tracks.length) throw new Error('Nessun brano nella risposta');
 
-    const enriched = tracks.map((t,i) => {
+    // Prima mappa base
+    let enriched = tracks.map((t,i) => {
       const block = sessionBlocks[i] || sessionBlocks[sessionBlocks.length-1];
       const phase = PHASE_MAP[t.phase] || PHASES_DEF[2];
       const inLib = library.find(l=>l.title?.toLowerCase()===t.title?.toLowerCase()&&l.artist?.toLowerCase()===t.artist?.toLowerCase());
-      return {...t, bpm:t.bpm||block.bpm, phase:t.phase||block.type, phaseData:phase, block, fromLibrary:!!inLib, uri:inLib?.uri||null, cover:inLib?.cover||null};
+      return {...t, bpm:t.bpm||block.bpm, phase:t.phase||block.type, phaseData:phase, block, fromLibrary:!!inLib, uri:inLib?.uri||null, cover:inLib?.cover||null, realBpm:null, bpmSource:'ai'};
     });
 
+    // Mostra subito i risultati AI
     renderResult(enriched);
+
+    // Poi arricchisce in background con dati reali Spotify (URI + BPM reali)
+    document.getElementById('resultArea').querySelector('#saveBtn') && 
+      (document.getElementById('resultArea').querySelector('#saveBtn').textContent = '🔍 Verifica BPM su Spotify...');
+    const token = await getValidToken();
+    if (token) {
+      enriched = await enrichTracksWithSpotify(enriched, token);
+      generatedTracks = enriched;
+      currentQueue = enriched.map(t=>({...t}));
+      renderResult(enriched);
+    }
 
   } catch(err) {
     console.error('[SpinFlow] generate error:', err);
@@ -1102,7 +1159,10 @@ function renderResult(tracks) {
         <div class="track-artist">${esc(t.artist)}</div>
       </div>
       <span class="phase-badge" style="background:${phase.bg};color:${phase.color};border:1px solid ${phase.border};">${t.block?.type||t.phase||''}</span>
-      <span style="font-size:11px;color:#6C63FF;font-weight:600;min-width:52px;text-align:right;">${t.bpm} BPM</span>
+      <span style="font-size:11px;font-weight:600;min-width:64px;text-align:right;">
+        <span style="color:#6C63FF;">${t.realBpm || t.bpm} BPM</span>
+        ${t.bpmSource==='spotify' && t.realBpm && t.realBpm!==t.bpm ? `<span style="font-size:9px;color:#4ade80;display:block;">✓ Spotify</span>` : ''}
+      </span>
       <button class="ctrl-btn" data-regen="${i}" onclick="regenerateSingle(${i})" title="Rigenera" style="font-size:16px;width:28px;height:28px;color:#888;" onmouseover="this.style.color='#a89bff'" onmouseout="this.style.color='#888'">↺</button>
       <button class="play-track-btn" onclick="playTrackBySearch('${esc(t.title)}','${esc(t.artist)}',${i})" title="Riproduci">▶</button>
     </div>`;
