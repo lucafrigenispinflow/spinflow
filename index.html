@@ -914,29 +914,19 @@ async function savePlaylist() {
   btn.textContent = '⏳ Salvataggio...';
   btn.style.background = '';
   btn.style.color = '';
-
+ 
   let token = await getValidToken();
   if (!token) {
     btn.textContent = '❌ Token scaduto — fai logout e riaccedi';
     btn.disabled = false;
     return;
   }
-
+ 
   try {
-    // ====== STEP 1: Ottieni lo userId (OBBLIGATORIO per creare playlist) ======
-    const meRes = await fetch('https://api.spotify.com/v1/me', {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-    if (!meRes.ok) throw new Error('Impossibile ottenere profilo utente');
-    const meData = await meRes.json();
-    const userId = meData.id;
-    console.log('[SpinFlow] userId:', userId);
-
-    // ====== STEP 2: Crea la playlist con l'endpoint CORRETTO ======
-    // BUG FIX: era "POST /me/playlists" → ora "POST /users/{userId}/playlists"
+    // STEP 1: Crea la playlist (funziona con POST /me/playlists)
     const plName = document.getElementById('playlistName').value || 'Spinning Session 🔥';
     
-    const plRes = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
+    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer ' + token,
@@ -944,153 +934,166 @@ async function savePlaylist() {
       },
       body: JSON.stringify({
         name: plName,
-        description: `Sessione spinning — SpinFlow ${new Date().toLocaleDateString('it-IT')}`,
-        public: false  // false = privata, meno restrizioni
+        description: 'Sessione spinning — SpinFlow ' + new Date().toLocaleDateString('it-IT'),
+        public: false
       })
     });
-
+ 
     if (!plRes.ok) {
       const e = await plRes.json().catch(() => ({}));
-      console.error('[SpinFlow] Errore creazione playlist:', plRes.status, e);
-      if (plRes.status === 403) {
-        btn.textContent = '⚠️ Aggiungi il tuo account nella Spotify Dashboard';
-        btn.style.background = '#92400e';
-        btn.style.color = '#fde68a';
-        btn.disabled = false;
-        const dashMsg = document.getElementById('spotifyDashboardMsg');
-        if (dashMsg) dashMsg.style.display = 'block';
-        return;
-      }
-      throw new Error(`Creazione playlist fallita (${plRes.status}): ${e?.error?.message || ''}`);
+      throw new Error('Creazione playlist fallita (' + plRes.status + '): ' + (e?.error?.message || ''));
     }
     const pl = await plRes.json();
-    console.log('[SpinFlow] Playlist creata:', pl.id, pl.name);
-
-    // ====== STEP 3: Cerca gli URI reali di ogni brano su Spotify ======
-    btn.textContent = '🔍 Cercando brani su Spotify...';
-    
-    // Rinfresca il token (la ricerca AI può aver preso tempo)
+    console.log('[SpinFlow] Playlist creata:', pl.id);
+ 
+    // STEP 2: Cerca tutti i brani su Spotify
+    btn.textContent = '🔍 Cercando brani...';
     token = await getValidToken();
     
-    const uris = [];
+    const foundTracks = [];
     const notFound = [];
-
+ 
     for (let i = 0; i < generatedTracks.length; i++) {
       const t = generatedTracks[i];
-      btn.textContent = `🔍 Brano ${i + 1}/${generatedTracks.length}...`;
-
-      // Se abbiamo già un URI valido, usiamolo
+      btn.textContent = '🔍 Brano ' + (i + 1) + '/' + generatedTracks.length + '...';
+ 
       if (t.uri && t.uri.startsWith('spotify:track:')) {
-        uris.push(t.uri);
-        console.log(`[SpinFlow] Brano ${i + 1}: URI già presente → ${t.uri}`);
+        const trackId = t.uri.replace('spotify:track:', '');
+        foundTracks.push({ ...t, spotifyUrl: 'https://open.spotify.com/track/' + trackId });
         continue;
       }
-
-      // Altrimenti cerchiamo su Spotify
+ 
       try {
-        // Piccolo ritardo per evitare rate limiting di Spotify
         if (i > 0) await new Promise(r => setTimeout(r, 200));
-        
-        const q = encodeURIComponent(`track:${t.title} artist:${t.artist}`);
+        const q = encodeURIComponent(t.title + ' ' + t.artist);
         const sRes = await fetch(
-          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=3`,
+          'https://api.spotify.com/v1/search?q=' + q + '&type=track&limit=1',
           { headers: { Authorization: 'Bearer ' + token } }
         );
-        
-        if (sRes.status === 429) {
-          // Rate limited — aspetta e riprova
-          const wait = parseInt(sRes.headers.get('Retry-After') || '2') * 1000;
-          console.warn(`[SpinFlow] Rate limited, aspetto ${wait}ms...`);
-          await new Promise(r => setTimeout(r, wait));
-          // Riprova
-          i--;
-          continue;
-        }
-        
         const sData = await sRes.json();
         const found = sData.tracks?.items?.[0];
-
+ 
         if (found) {
-          uris.push(found.uri);
+          foundTracks.push({
+            ...t,
+            uri: found.uri,
+            spotifyUrl: found.external_urls?.spotify || '',
+            spotifyId: found.id,
+            spotifyName: found.name,
+            spotifyArtist: found.artists[0]?.name || t.artist
+          });
           t.uri = found.uri;
-          console.log(`[SpinFlow] Brano ${i + 1}: "${t.title}" → ${found.uri}`);
         } else {
-          // Prova ricerca più generica (senza filtri track:/artist:)
-          const q2 = encodeURIComponent(`${t.title} ${t.artist}`);
-          const sRes2 = await fetch(
-            `https://api.spotify.com/v1/search?q=${q2}&type=track&limit=1`,
-            { headers: { Authorization: 'Bearer ' + token } }
-          );
-          const sData2 = await sRes2.json();
-          const found2 = sData2.tracks?.items?.[0];
-          if (found2) {
-            uris.push(found2.uri);
-            t.uri = found2.uri;
-            console.log(`[SpinFlow] Brano ${i + 1}: "${t.title}" → ${found2.uri} (ricerca generica)`);
-          } else {
-            notFound.push(t.title);
-            console.warn(`[SpinFlow] Brano ${i + 1}: "${t.title}" di ${t.artist} NON TROVATO`);
-          }
+          notFound.push(t.title + ' - ' + t.artist);
         }
       } catch (e) {
-        notFound.push(t.title);
-        console.error(`[SpinFlow] Errore ricerca brano ${i + 1}:`, e);
+        notFound.push(t.title + ' - ' + t.artist);
       }
     }
-
-    console.log(`[SpinFlow] URI trovati: ${uris.length}/${generatedTracks.length}`, uris);
-
-    if (!uris.length) {
-      throw new Error('Nessun brano trovato su Spotify. Riprova a generare.');
-    }
-
-    // ====== STEP 4: Aggiungi i brani alla playlist ======
-    btn.textContent = `📝 Aggiungendo ${uris.length} brani...`;
-    
-    // Rinfresca il token un'altra volta per sicurezza
-    token = await getValidToken();
-
-    // Spotify accetta max 100 URI per volta, dividiamo in batch
-    for (let batch = 0; batch < uris.length; batch += 100) {
-      const chunk = uris.slice(batch, batch + 100);
-      const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ uris: chunk })
-      });
-
-      if (!addRes.ok) {
-        const e = await addRes.json().catch(() => ({}));
-        console.error('[SpinFlow] Errore aggiunta brani:', addRes.status, e);
-        throw new Error(`Aggiunta brani fallita (${addRes.status}): ${e?.error?.message || ''}`);
+ 
+    // STEP 3: Prova ad aggiungere i brani (nel caso Spotify riabiliti l'endpoint)
+    let addedViaApi = false;
+    if (foundTracks.length > 0) {
+      const uris = foundTracks.filter(t => t.uri).map(t => t.uri);
+      try {
+        const addRes = await fetch('https://api.spotify.com/v1/playlists/' + pl.id + '/tracks', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uris: uris })
+        });
+        if (addRes.ok) {
+          addedViaApi = true;
+          console.log('[SpinFlow] Brani aggiunti via API!');
+        } else {
+          console.log('[SpinFlow] API add blocked, using manual method');
+        }
+      } catch (e) {
+        console.log('[SpinFlow] API add failed, using manual method');
       }
-      console.log(`[SpinFlow] Batch ${Math.floor(batch/100)+1}: ${chunk.length} brani aggiunti`);
     }
-
-    // ====== STEP 5: Salva nello storico ======
+ 
+    // STEP 4: Salva nello storico
     sessionHistory.unshift({
       id: Date.now(),
       name: plName,
       date: new Date().toISOString(),
       tracks: generatedTracks,
-      trackCount: uris.length,
+      trackCount: foundTracks.length,
       spotifyUrl: pl.external_urls?.spotify || ''
     });
     localStorage.setItem('spinflow_history', JSON.stringify(sessionHistory));
-
-    // ====== SUCCESSO! ======
-    const skipped = notFound.length > 0 ? ` (${notFound.length} non trovati)` : '';
-    btn.textContent = `✅ Salvata! ${uris.length} brani su Spotify${skipped}`;
-    btn.style.background = '#15803d';
-    btn.style.color = '#fff';
-    console.log('[SpinFlow] ✅ Playlist salvata con successo!', pl.external_urls?.spotify);
-
+ 
+    // STEP 5: Mostra risultato
+    if (addedViaApi) {
+      // API ha funzionato! (per il futuro quando Spotify riabilita)
+      btn.textContent = '✅ Salvata con ' + foundTracks.length + ' brani!';
+      btn.style.background = '#15803d';
+      btn.style.color = '#fff';
+    } else {
+      // Mostra interfaccia per aggiungere brani manualmente
+      const playlistUrl = pl.external_urls?.spotify || '';
+      const allUris = foundTracks.filter(t => t.uri).map(t => t.uri).join('\n');
+      
+      // Costruisci la lista dei brani con link diretti
+      let trackListHtml = foundTracks.map((t, i) => {
+        const searchUrl = 'https://open.spotify.com/search/' + encodeURIComponent(t.title + ' ' + t.artist);
+        const trackUrl = t.spotifyUrl || searchUrl;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e1e1e;">'
+          + '<span style="font-size:11px;color:#555;width:20px;text-align:center;">' + (i+1) + '</span>'
+          + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(t.spotifyName || t.title) + '</div>'
+          + '<div style="font-size:11px;color:#777;">' + esc(t.spotifyArtist || t.artist) + '</div>'
+          + '</div>'
+          + '<a href="' + trackUrl + '" target="_blank" style="padding:4px 10px;border-radius:16px;background:#1DB954;color:#fff;font-size:11px;text-decoration:none;white-space:nowrap;flex-shrink:0;">Apri su Spotify</a>'
+          + '</div>';
+      }).join('');
+ 
+      // Sostituisci il bottone con le istruzioni
+      const saveArea = document.getElementById('saveBtn').parentElement;
+      const instructionHtml = ''
+        + '<div style="background:#0d2b1e;border:1px solid #1a4a30;border-radius:12px;padding:16px;margin-top:12px;">'
+        + '  <div style="font-size:14px;font-weight:700;color:#4ade80;margin-bottom:8px;">✅ Playlist "' + esc(plName) + '" creata!</div>'
+        + '  <div style="font-size:12px;color:#aaa;margin-bottom:12px;line-height:1.5;">'
+        + '    Spotify in modalità sviluppo non permette di aggiungere brani via app.<br>'
+        + '    <strong>Segui questi 2 semplici passaggi:</strong>'
+        + '  </div>'
+        
+        + '  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">'
+        + '    <a href="' + playlistUrl + '" target="_blank" class="btn btn-green" style="text-decoration:none;font-size:13px;padding:10px 16px;">'
+        + '      1️⃣ Apri playlist su Spotify'
+        + '    </a>'
+        + '    <button onclick="copyTrackSearch(\'' + foundTracks.map(t => esc(t.title + ' ' + t.artist)).join('|||') + '\')" class="btn btn-primary" style="font-size:13px;padding:10px 16px;">'
+        + '      📋 Copia lista brani'
+        + '    </button>'
+        + '  </div>'
+        
+        + '  <div style="font-size:11px;color:#888;margin-bottom:10px;padding:8px 10px;background:#141414;border-radius:8px;line-height:1.6;">'
+        + '    💡 <strong>Metodo veloce:</strong> Clicca "Apri playlist su Spotify" → nella playlist clicca il campo di ricerca "Cerchiamo qualcosa per la tua playlist" → cerca ogni brano e clicca + per aggiungerlo.'
+        + '  </div>'
+        
+        + '  <div style="font-size:11px;font-weight:600;color:#555;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;">'
+        + '    Brani trovati (' + foundTracks.length + '/' + generatedTracks.length + ')'
+        + '  </div>'
+        + '  <div style="max-height:300px;overflow-y:auto;">' + trackListHtml + '</div>'
+        
+        + (notFound.length > 0 
+          ? '<div style="margin-top:10px;font-size:11px;color:#f87171;">Non trovati: ' + notFound.join(', ') + '</div>'
+          : '')
+        + '</div>';
+ 
+      // Aggiungi dopo il bottone save
+      const instrDiv = document.createElement('div');
+      instrDiv.innerHTML = instructionHtml;
+      saveArea.appendChild(instrDiv);
+ 
+      btn.textContent = '✅ Playlist creata — aggiungi i brani qui sotto';
+      btn.style.background = '#15803d';
+      btn.style.color = '#fff';
+    }
+ 
   } catch (err) {
     console.error('[SpinFlow] savePlaylist error:', err);
-    btn.textContent = `❌ ${err.message}`;
+    btn.textContent = '❌ ' + err.message;
     btn.style.background = '#7f1d1d';
     btn.style.color = '#fca5a5';
     setTimeout(() => {
@@ -1100,6 +1103,27 @@ async function savePlaylist() {
       btn.disabled = false;
     }, 8000);
   }
+}
+ 
+// Funzione helper per copiare la lista brani
+function copyTrackSearch(tracksStr) {
+  const tracks = tracksStr.split('|||');
+  const text = tracks.map((t, i) => (i + 1) + '. ' + t).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copiata!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('Lista copiata negli appunti!');
+  });
 }
 // ---- VARIETY HELPERS ----
 
