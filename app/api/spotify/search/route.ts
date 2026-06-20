@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import type { AICandidate, Song } from "@/types";
 import { bpmMatch, validateStructure, type Section } from "../structure";
+import { createClient } from "@/lib/supabase/server";
+import { getSpotifyToken } from "@/lib/spotify";
 
 type IncomingCandidate = AICandidate & { block_index?: number };
 
 export async function POST(req: Request) {
-  let body: { candidate?: IncomingCandidate; spotify_token?: string | null };
+  let body: { candidate?: IncomingCandidate };
   try {
     body = await req.json();
   } catch {
@@ -16,9 +18,15 @@ export async function POST(req: Request) {
   if (!candidate) {
     return NextResponse.json({ error: "Missing candidate" }, { status: 400 });
   }
-  const token = body?.spotify_token;
 
-  // No Spotify token yet -> return the AI candidate as an unvalidated Song.
+  // Resolve the Spotify token server-side from the logged-in user's profile.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const token = user ? await getSpotifyToken(user.id) : null;
+
+  // Spotify not connected -> return the AI candidate as an unvalidated Song.
   if (!token) {
     return NextResponse.json(aiPassthrough(candidate));
   }

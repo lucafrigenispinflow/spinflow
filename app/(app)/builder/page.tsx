@@ -160,7 +160,6 @@ export default function BuilderPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         candidate: { ...candidate, block_index: blockIndex },
-        spotify_token: null,
       }),
     });
     return r.json();
