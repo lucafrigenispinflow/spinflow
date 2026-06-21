@@ -32,12 +32,20 @@ export default async function DashboardPage() {
           Il tuo assistente AI per creare sessioni di spinning perfette.
         </p>
 
-        <Link
-          href="/builder"
-          className="inline-block rounded-lg bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
-        >
-          ✨ Nuova sessione
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/builder"
+            className="inline-block rounded-lg bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500"
+          >
+            ✨ Nuova sessione
+          </Link>
+          <Link
+            href="/library"
+            className="inline-block rounded-lg border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-200 transition hover:border-violet-600 hover:text-white"
+          >
+            📚 La tua libreria
+          </Link>
+        </div>
       </main>
     </div>
   );

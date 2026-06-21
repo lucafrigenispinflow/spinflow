@@ -114,6 +114,22 @@ export type TemplateBlock = Omit<
   "id" | "music_description" | "reference_artist"
 >;
 
+// A row of the `sessions` table (user-saved sessions with their playlist).
+export type SessionRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  discipline: Discipline;
+  total_duration: number;
+  intensity_level: Session["intensity_level"];
+  genre_preference: string | null;
+  blocks: Block[];
+  playlist: Song[] | null;
+  is_favorite: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 // A row of the `session_templates` table (user-saved templates).
 export type UserTemplateRow = {
   id: string;

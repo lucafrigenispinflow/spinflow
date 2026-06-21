@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -23,6 +23,7 @@ import {
   type LoadableTemplate,
   type Session,
   type Song,
+  type SessionRow,
   type AIBlockCandidates,
   BLOCK_BPM_DEFAULTS,
   DISCIPLINES,
@@ -77,6 +78,33 @@ export default function BuilderPage() {
 
   const blocksTotal = blocks.reduce((s, b) => s + b.duration_minutes, 0);
   const started = blocks.length > 0;
+
+  // Reopen a saved session from the library (?session=<id>).
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("session");
+    if (!id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/sessions/${id}`);
+        if (!res.ok) return;
+        const s = (await res.json()) as SessionRow;
+        setName(s.name);
+        setDiscipline(s.discipline);
+        setTotalDuration(s.total_duration);
+        setIntensity(s.intensity_level);
+        setGenrePreference(s.genre_preference ?? "");
+        setBlocks(
+          (s.blocks ?? []).map((b) => ({
+            ...b,
+            id: b.id ?? crypto.randomUUID(),
+          }))
+        );
+        setPlaylist(s.playlist ?? []);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
 
   function updateBlock(id: string, patch: Partial<Block>) {
     setBlocks((prev) =>
@@ -454,6 +482,7 @@ export default function BuilderPage() {
           {!isGenerating && playlist.length > 0 && (
             <PlaylistDisplay
               songs={playlist}
+              session={buildSession()}
               onRegenerate={regenerateBlock}
               regeneratingIndex={regeneratingIndex}
             />
