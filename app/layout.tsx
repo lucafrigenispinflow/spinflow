@@ -33,12 +33,12 @@ export default function RootLayout({
           style={{ textAlign: "center", padding: "8px", fontSize: "11px" }}
         >
           <a
-            href="https://getsongbpm.com"
+            href="https://tunebat.com"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: "#555", textDecoration: "none" }}
           >
-            BPM data by GetSongBPM
+            Music data by Tunebat
           </a>
         </footer>
       </body>

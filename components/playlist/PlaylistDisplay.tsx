@@ -63,10 +63,10 @@ export function PlaylistDisplay({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {/* BPM */}
+                  {/* BPM: real (Tunebat) or AI target */}
                   {song.bpm_real ? (
                     <span className="rounded-full bg-green-950 px-2 py-0.5 font-medium text-green-400">
-                      {song.bpm_real} BPM ✓ Spotify
+                      {song.bpm_real} BPM ✓ BPM reale
                     </span>
                   ) : (
                     <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-zinc-400">
@@ -74,18 +74,14 @@ export function PlaylistDisplay({
                     </span>
                   )}
 
-                  {/* Structure status */}
-                  {!song.bpm_real ? (
-                    <span className="rounded-full bg-zinc-700 px-2 py-0.5 font-medium text-zinc-300">
-                      AI
-                    </span>
-                  ) : song.structure_validated ? (
+                  {/* Structure status (independent of BPM source) */}
+                  {song.structure_validated ? (
                     <span className="rounded-full bg-green-950 px-2 py-0.5 font-medium text-green-400">
                       ✓ Struttura validata
                     </span>
                   ) : (
-                    <span className="rounded-full bg-yellow-950 px-2 py-0.5 font-medium text-yellow-400">
-                      ⚠ Migliore disponibile
+                    <span className="rounded-full bg-zinc-700 px-2 py-0.5 font-medium text-zinc-300">
+                      AI
                     </span>
                   )}
                 </div>
