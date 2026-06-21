@@ -29,9 +29,18 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        <a href="https://getsongbpm.com" style={{ display: "none" }}>
-          BPM data by GetSongBPM
-        </a>
+        <footer
+          style={{ textAlign: "center", padding: "8px", fontSize: "11px" }}
+        >
+          <a
+            href="https://getsongbpm.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#555", textDecoration: "none" }}
+          >
+            BPM data by GetSongBPM
+          </a>
+        </footer>
       </body>
     </html>
   );
