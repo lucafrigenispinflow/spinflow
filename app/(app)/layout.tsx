@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { PlayerProvider } from "@/components/player/PlayerProvider";
 
 export default async function AppLayout({
   children,
@@ -50,7 +51,7 @@ export default async function AppLayout({
           </Link>
         )}
       </div>
-      {children}
+      <PlayerProvider enabled={connected}>{children}</PlayerProvider>
     </div>
   );
 }

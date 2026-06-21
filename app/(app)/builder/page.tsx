@@ -178,16 +178,17 @@ export default function BuilderPage() {
     };
   }
 
-  // Validate one AI candidate against Spotify (token null for now -> passthrough).
+  // Validate a block's AI candidates against Spotify/BPM. Sends both candidates
+  // so the route can fall back to the 2nd when the 1st's BPM doesn't match.
   async function validateCandidate(
-    candidate: AIBlockCandidates["candidates"][number],
+    candidates: AIBlockCandidates["candidates"],
     blockIndex: number
   ): Promise<Song> {
     const r = await fetch("/api/spotify/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        candidate: { ...candidate, block_index: blockIndex },
+        candidates: candidates.map((c) => ({ ...c, block_index: blockIndex })),
       }),
     });
     return r.json();
@@ -216,7 +217,7 @@ export default function BuilderPage() {
       );
       const songs = await Promise.all(
         ordered.map((item) =>
-          validateCandidate(item.candidates[0], item.block_index)
+          validateCandidate(item.candidates, item.block_index)
         )
       );
       setPlaylist(songs);
@@ -246,9 +247,9 @@ export default function BuilderPage() {
       const { candidates } = (await res.json()) as {
         candidates: AIBlockCandidates[];
       };
-      const cand = candidates[0]?.candidates?.[0];
-      if (!cand) throw new Error("Nessun candidato");
-      const song = await validateCandidate(cand, blockIndex);
+      const cands = candidates[0]?.candidates;
+      if (!cands?.length) throw new Error("Nessun candidato");
+      const song = await validateCandidate(cands, blockIndex);
       setPlaylist((prev) =>
         prev.map((s) => (s.block_index === blockIndex ? song : s))
       );

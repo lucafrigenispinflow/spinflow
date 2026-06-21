@@ -3,6 +3,24 @@
 // Returns null on any failure (not found / network) so callers fall back
 // silently to the AI target BPM.
 
+// True if a real tempo matches the target within ±15, or at half/double tempo.
+export function bpmMatches(real: number, target: number): boolean {
+  return (
+    Math.abs(real - target) <= 15 ||
+    Math.abs(real * 2 - target) <= 15 ||
+    Math.abs(real / 2 - target) <= 15
+  );
+}
+
+// Distance to the target, accounting for half/double tempo (lower = closer).
+export function bpmDistance(real: number, target: number): number {
+  return Math.min(
+    Math.abs(real - target),
+    Math.abs(real * 2 - target),
+    Math.abs(real / 2 - target)
+  );
+}
+
 export async function getRealBPM(
   title: string,
   artist: string

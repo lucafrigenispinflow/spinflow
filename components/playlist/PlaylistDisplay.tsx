@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import type { Block, Discipline, EnergyLevel, Session, Song } from "@/types";
+import { bpmMatches } from "@/lib/bpm";
+import { usePlayer } from "@/components/player/PlayerProvider";
 
 export type SessionMeta = {
   name: string;
@@ -37,6 +39,11 @@ export function PlaylistDisplay({
   const [saveName, setSaveName] = useState(session.name);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<"ok" | "err" | null>(null);
+
+  const { playTrack, currentUri } = usePlayer();
+  const queue = songs
+    .filter((s) => s.spotify_uri)
+    .map((s) => s.spotify_uri as string);
 
   function openSave() {
     setSaveName(session.name);
@@ -86,10 +93,19 @@ export function PlaylistDisplay({
       <div className="flex flex-col gap-3">
         {songs.map((song, i) => {
           const regenerating = regeneratingIndex === song.block_index;
+          const playing = !!song.spotify_uri && song.spotify_uri === currentUri;
+          const playable = !!song.spotify_uri;
           return (
             <div
               key={`${song.block_index}-${i}`}
-              className="flex items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800 p-4"
+              onClick={() =>
+                playable && playTrack(song.spotify_uri as string, queue)
+              }
+              className={`flex items-center gap-4 rounded-xl border p-4 transition ${
+                playing
+                  ? "border-green-500 bg-green-950/30"
+                  : "border-zinc-700 bg-zinc-800"
+              } ${playable ? "cursor-pointer hover:border-violet-600" : ""}`}
             >
               {/* Left: block number + type */}
               <div className="flex w-24 shrink-0 flex-col items-center gap-1 text-center">
@@ -109,11 +125,17 @@ export function PlaylistDisplay({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {/* BPM: real (Tunebat) or AI target */}
-                  {song.bpm_real ? (
-                    <span className="rounded-full bg-green-950 px-2 py-0.5 font-medium text-green-400">
-                      {song.bpm_real} BPM ✓ BPM reale
-                    </span>
+                  {/* BPM: real match (green) / real mismatch (yellow) / target (grey) */}
+                  {song.bpm_real != null ? (
+                    bpmMatches(song.bpm_real, song.bpm_target) ? (
+                      <span className="rounded-full bg-green-950 px-2 py-0.5 font-medium text-green-400">
+                        {song.bpm_real} BPM ✓ BPM reale
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-yellow-950 px-2 py-0.5 font-medium text-yellow-400">
+                        ⚠ BPM reale: {song.bpm_real} (target: {song.bpm_target})
+                      </span>
+                    )
                   ) : (
                     <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-zinc-400">
                       {song.bpm_target} BPM target
@@ -144,19 +166,40 @@ export function PlaylistDisplay({
                 <span className="text-lg" title={song.energy}>
                   {ENERGY_DOT[song.energy]}
                 </span>
+                {playable && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playTrack(song.spotify_uri as string, queue);
+                    }}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold text-white transition ${
+                      playing
+                        ? "bg-green-500"
+                        : "bg-green-600 hover:bg-green-500"
+                    }`}
+                    aria-label="Riproduci su Spotify"
+                  >
+                    {playing ? "♫ In riproduzione" : "▶ Play"}
+                  </button>
+                )}
                 {song.spotify_url && (
                   <a
                     href={song.spotify_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg bg-green-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-green-500"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] text-zinc-500 hover:text-white"
                   >
-                    ▶ Spotify
+                    apri su Spotify ↗
                   </a>
                 )}
                 <button
                   type="button"
-                  onClick={() => onRegenerate(song.block_index)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRegenerate(song.block_index);
+                  }}
                   disabled={regenerating}
                   title="Rigenera questo blocco"
                   className="rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-400 transition hover:border-violet-600 hover:text-white disabled:opacity-50"

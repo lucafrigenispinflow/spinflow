@@ -3,7 +3,7 @@ import type { AICandidate, Song } from "@/types";
 import { validateStructure, type Section } from "../structure";
 import { createClient } from "@/lib/supabase/server";
 import { getSpotifyToken } from "@/lib/spotify";
-import { getRealBPM } from "@/lib/bpm";
+import { getRealBPM, bpmMatches, bpmDistance } from "@/lib/bpm";
 
 type IncomingCandidate = AICandidate & { block_index?: number };
 
@@ -16,25 +16,53 @@ type SpotifyTrack = {
 };
 
 export async function POST(req: Request) {
-  let body: { candidate?: IncomingCandidate };
+  let body: { candidate?: IncomingCandidate; candidates?: IncomingCandidate[] };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const candidate = body?.candidate;
-  if (!candidate) {
-    return NextResponse.json({ error: "Missing candidate" }, { status: 400 });
+  // Accept either a single candidate or an array (to try a fallback).
+  const candidates =
+    body.candidates ?? (body.candidate ? [body.candidate] : []);
+  if (candidates.length === 0) {
+    return NextResponse.json({ error: "Missing candidate(s)" }, { status: 400 });
   }
 
-  // Optional Spotify token (for track id/uri/url + best-effort structure).
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   const token = user ? await getSpotifyToken(user.id) : null;
 
+  // Resolve the first candidate; if its BPM doesn't match, try the second and
+  // keep whichever real BPM is closest to the target.
+  const first = await resolveSong(candidates[0], token);
+  if (first.bpm_real != null && bpmMatches(first.bpm_real, first.bpm_target)) {
+    return NextResponse.json(first);
+  }
+  if (candidates[1]) {
+    const second = await resolveSong(candidates[1], token);
+    const fd =
+      first.bpm_real != null
+        ? bpmDistance(first.bpm_real, first.bpm_target)
+        : Infinity;
+    const sd =
+      second.bpm_real != null
+        ? bpmDistance(second.bpm_real, second.bpm_target)
+        : Infinity;
+    return NextResponse.json(sd < fd ? second : first);
+  }
+  return NextResponse.json(first);
+}
+
+// Resolve one AI candidate into a Song: Spotify lookup (id/uri/url + best-effort
+// structure) when a token is present, plus real BPM via Tunebat (Worker).
+async function resolveSong(
+  candidate: IncomingCandidate,
+  token: string | null
+): Promise<Song> {
   let spotifyTrackId: string | undefined;
   let spotifyUri: string | undefined;
   let spotifyUrl: string | undefined;
@@ -61,8 +89,6 @@ export async function POST(req: Request) {
           spotifyUri = best.uri;
           spotifyUrl = best.external_urls?.spotify;
 
-          // Best-effort structure validation. Spotify deprecated
-          // audio-analysis for newer apps -> usually 403, handled gracefully.
           try {
             const analysisRes = await fetch(
               `https://api.spotify.com/v1/audio-analysis/${best.id}`,
@@ -89,10 +115,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // Real BPM via GetSongBPM (independent of Spotify; null if no key / not found).
   const bpmReal = await getRealBPM(candidate.title, candidate.artist);
 
-  const song: Song = {
+  return {
     block_index: candidate.block_index ?? 0,
     title: candidate.title,
     artist: candidate.artist,
@@ -102,13 +127,10 @@ export async function POST(req: Request) {
     spotify_uri: spotifyUri,
     spotify_url: spotifyUrl,
     structure_validated: structureValidated,
-    // Only surface a structure "warning" when we actually had Spotify data.
     structure_warning: !!spotifyTrackId && !structureValidated,
     energy: candidate.energy,
     block_type: candidate.block_type,
     song_structure: candidate.song_structure,
     structure_reason: candidate.structure_reason,
   };
-
-  return NextResponse.json(song);
 }
