@@ -189,6 +189,8 @@ export default function BuilderPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         candidates: candidates.map((c) => ({ ...c, block_index: blockIndex })),
+        block: blocks[blockIndex],
+        genre_preference: genrePreference,
       }),
     });
     return r.json();
