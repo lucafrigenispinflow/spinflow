@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import type { Session } from "@/types";
+import { createClient } from "@/lib/supabase/server";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -81,6 +82,41 @@ export async function POST(req: Request) {
     );
   }
 
+  // --- Plan enforcement (monthly session quota for free users) ---
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan, sessions_this_month, month_reset_at")
+    .eq("id", user.id)
+    .single();
+
+  const now = new Date();
+  const reset = profile?.month_reset_at ? new Date(profile.month_reset_at) : null;
+  const sameMonth =
+    !!reset &&
+    reset.getUTCFullYear() === now.getUTCFullYear() &&
+    reset.getUTCMonth() === now.getUTCMonth();
+  // A new month resets the counter to 0.
+  const usedThisMonth = sameMonth ? profile?.sessions_this_month ?? 0 : 0;
+  const plan = profile?.plan ?? "free";
+
+  if (plan === "free" && usedThisMonth >= 5) {
+    return NextResponse.json(
+      {
+        error: "limit_reached",
+        message:
+          "Hai raggiunto il limite di 5 sessioni mensili. Upgrada a Pro per sessioni illimitate.",
+      },
+      { status: 403 }
+    );
+  }
+
   // Echo each block's bpm as an explicit, mandatory `bpm_required` field so
   // the model treats it as a hard constraint rather than a hint.
   const sessionForPrompt = {
@@ -130,6 +166,18 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  // Count this successful generation against the monthly quota (and reset the
+  // window if we rolled into a new month).
+  await supabase
+    .from("profiles")
+    .update({
+      sessions_this_month: usedThisMonth + 1,
+      month_reset_at: sameMonth
+        ? profile?.month_reset_at ?? now.toISOString()
+        : now.toISOString(),
+    })
+    .eq("id", user.id);
 
   // 5. Return candidates.
   return NextResponse.json({ candidates: parsed });

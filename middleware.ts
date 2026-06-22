@@ -14,7 +14,8 @@ export const config = {
      * - favicon.ico, sitemap.xml, robots.txt
      * - image files
      * - /auth/callback (Supabase OAuth callback, when added)
+     * - /api/stripe/webhook (Stripe calls it without auth cookies)
      */
-    "/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|auth/callback|api/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

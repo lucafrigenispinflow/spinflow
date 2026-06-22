@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSpotifyToken } from "@/lib/spotify";
+import { PLANS, type PlanKey } from "@/lib/stripe";
+import { PricingCards } from "@/components/settings/PricingCards";
 
 async function disconnectSpotify() {
   "use server";
@@ -27,7 +29,7 @@ async function disconnectSpotify() {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: { spotify?: string };
+  searchParams: { spotify?: string; upgraded?: string };
 }) {
   const supabase = await createClient();
   const {
@@ -36,11 +38,19 @@ export default async function SettingsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("spotify_access_token")
+    .select("spotify_access_token, plan, stripe_subscription_id")
     .eq("id", user?.id ?? "")
     .single();
 
   const connected = !!profile?.spotify_access_token;
+  const currentPlan: PlanKey = (profile?.plan as PlanKey) ?? "free";
+  const subscribed = !!profile?.stripe_subscription_id;
+  const planList = (["free", "pro", "studio"] as const).map((key) => ({
+    key,
+    name: PLANS[key].name,
+    price: PLANS[key].price,
+    features: PLANS[key].features,
+  }));
 
   // Best-effort: fetch the connected Spotify account's email/name.
   let spotifyEmail: string | null = null;
@@ -63,11 +73,17 @@ export default async function SettingsPage({
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-10">
+    <main className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="mb-1 text-2xl font-bold">Impostazioni</h1>
       <p className="mb-8 text-sm text-zinc-400">
         Gestisci il tuo account e le integrazioni.
       </p>
+
+      {searchParams.upgraded === "true" && (
+        <p className="mb-4 rounded-lg bg-green-950 px-4 py-3 text-sm text-green-400">
+          ✓ Abbonamento attivato! Il tuo piano si aggiornerà a breve.
+        </p>
+      )}
 
       {searchParams.spotify === "connected" && (
         <p className="mb-4 rounded-lg bg-green-950 px-4 py-3 text-sm text-green-400">
@@ -121,6 +137,17 @@ export default async function SettingsPage({
             </a>
           </div>
         )}
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-800/50 p-6">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+          Piano
+        </h2>
+        <PricingCards
+          plans={planList}
+          currentPlan={currentPlan}
+          subscribed={subscribed}
+        />
       </section>
 
       <div className="mt-8">
